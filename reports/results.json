@@ -1,0 +1,122 @@
+[
+  {
+    "hotel": "City Hotel",
+    "horizon": 1,
+    "days": 184,
+    "average_guests": 140.14,
+    "weekday_average": 26.55,
+    "same_day_last_year": 35.83,
+    "pace": 4.81,
+    "gradient_boosting": 6.42,
+    "pace_vs_weekday_pct": 81.89,
+    "ml_vs_weekday_pct": 75.82
+  },
+  {
+    "hotel": "City Hotel",
+    "horizon": 3,
+    "days": 184,
+    "average_guests": 140.14,
+    "weekday_average": 26.55,
+    "same_day_last_year": 35.83,
+    "pace": 7.25,
+    "gradient_boosting": 7.96,
+    "pace_vs_weekday_pct": 72.7,
+    "ml_vs_weekday_pct": 70.01
+  },
+  {
+    "hotel": "City Hotel",
+    "horizon": 7,
+    "days": 184,
+    "average_guests": 140.14,
+    "weekday_average": 26.55,
+    "same_day_last_year": 35.83,
+    "pace": 8.63,
+    "gradient_boosting": 8.86,
+    "pace_vs_weekday_pct": 67.51,
+    "ml_vs_weekday_pct": 66.63
+  },
+  {
+    "hotel": "City Hotel",
+    "horizon": 14,
+    "days": 184,
+    "average_guests": 140.14,
+    "weekday_average": 27.46,
+    "same_day_last_year": 35.83,
+    "pace": 10.67,
+    "gradient_boosting": 10.97,
+    "pace_vs_weekday_pct": 61.15,
+    "ml_vs_weekday_pct": 60.05
+  },
+  {
+    "hotel": "City Hotel",
+    "horizon": 30,
+    "days": 184,
+    "average_guests": 140.14,
+    "weekday_average": 31.97,
+    "same_day_last_year": 35.83,
+    "pace": 18.27,
+    "gradient_boosting": 16.7,
+    "pace_vs_weekday_pct": 42.84,
+    "ml_vs_weekday_pct": 47.76
+  },
+  {
+    "hotel": "Resort Hotel",
+    "horizon": 1,
+    "days": 184,
+    "average_guests": 74.97,
+    "weekday_average": 21.49,
+    "same_day_last_year": 28.9,
+    "pace": 6.64,
+    "gradient_boosting": 6.75,
+    "pace_vs_weekday_pct": 69.11,
+    "ml_vs_weekday_pct": 68.6
+  },
+  {
+    "hotel": "Resort Hotel",
+    "horizon": 3,
+    "days": 184,
+    "average_guests": 74.97,
+    "weekday_average": 21.49,
+    "same_day_last_year": 28.9,
+    "pace": 8.47,
+    "gradient_boosting": 9.14,
+    "pace_vs_weekday_pct": 60.56,
+    "ml_vs_weekday_pct": 57.48
+  },
+  {
+    "hotel": "Resort Hotel",
+    "horizon": 7,
+    "days": 184,
+    "average_guests": 74.97,
+    "weekday_average": 21.49,
+    "same_day_last_year": 28.9,
+    "pace": 10.16,
+    "gradient_boosting": 10.61,
+    "pace_vs_weekday_pct": 52.74,
+    "ml_vs_weekday_pct": 50.62
+  },
+  {
+    "hotel": "Resort Hotel",
+    "horizon": 14,
+    "days": 184,
+    "average_guests": 74.97,
+    "weekday_average": 22.24,
+    "same_day_last_year": 28.9,
+    "pace": 13.12,
+    "gradient_boosting": 12.3,
+    "pace_vs_weekday_pct": 41.02,
+    "ml_vs_weekday_pct": 44.7
+  },
+  {
+    "hotel": "Resort Hotel",
+    "horizon": 30,
+    "days": 184,
+    "average_guests": 74.97,
+    "weekday_average": 21.58,
+    "same_day_last_year": 28.9,
+    "pace": 16.41,
+    "gradient_boosting": 14.3,
+    "pace_vs_weekday_pct": 23.96,
+    "ml_vs_weekday_pct": 33.73
+  }
+]

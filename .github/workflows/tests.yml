@@ -1,0 +1,23 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt pytest
+      - name: Tests (includes rerunning the full backtest)
+        run: python -m pytest -q
+      - name: The demo app starts
+        run: |
+          timeout 90 streamlit run streamlit_app.py --server.headless true --server.port 8501 &
+          for i in $(seq 1 30); do curl -sf localhost:8501/_stcore/health && exit 0; sleep 2; done; exit 1
