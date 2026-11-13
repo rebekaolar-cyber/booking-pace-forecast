@@ -54,23 +54,52 @@ class Hotel:
 
     @classmethod
     def from_bookings(cls, name: str, bookings: pd.DataFrame) -> "Hotel":
+        """From the hotel dataset's columns (see load_bookings)."""
         b = bookings[bookings.hotel == name]
-        days = pd.date_range(b.arrival.min(), b.arrival.max(), freq="D")
-        arrived = b[b.reservation_status == "Check-Out"].groupby("arrival").guests.sum()
-        actual = arrived.reindex(days, fill_value=0).astype(int)
+        return cls.from_reservations(
+            name,
+            arrival=b.arrival,
+            made_on=b.booked_on,
+            guests=b.guests,
+            cancelled_on=b.cancelled_on,
+            came=b.reservation_status == "Check-Out",
+        )
 
-        # A booking for day d made `lead` days before it is in the book at the start of every
+    @classmethod
+    def from_reservations(cls, name: str, arrival: pd.Series, made_on: pd.Series, guests: pd.Series,
+                          cancelled_on: pd.Series, came: pd.Series,
+                          actual: pd.Series | None = None, last_day: pd.Timestamp | None = None) -> "Hotel":
+        """From any reservation list.
+
+        arrival, made_on, cancelled_on: dates (cancelled_on empty if not cancelled).
+        came: True for reservations that turned into guests (not cancelled, not a no-show).
+        actual: guests per day, if known separately (for example from the till, walk-ins
+                included). Without it, guests per day = the reservations that came.
+        """
+        arrival = pd.to_datetime(arrival).dt.normalize()
+        made_on = pd.to_datetime(made_on).dt.normalize()
+        cancelled_on = pd.to_datetime(cancelled_on).dt.normalize()
+        guests = guests.astype(int)
+        first = arrival.min() if actual is None else min(arrival.min(), actual.index.min())
+        last = max(arrival.max(), last_day) if last_day is not None else arrival.max()
+        days = pd.date_range(first, last, freq="D")
+        if actual is None:
+            actual = guests[came.to_numpy()].groupby(arrival[came.to_numpy()]).sum()
+        actual = actual.reindex(days, fill_value=0).astype(int)
+
+        # A reservation for day d made `lead` days before it is in the book at the start of every
         # day d - k with k < lead (it was made the day before), and it stays there while the
         # cancellation date is on or after d - k, i.e. k >= d - cancelled_on.
-        row = (b.arrival - days[0]).dt.days.to_numpy()
-        hi = np.minimum(b.lead_time.to_numpy(), MAX_DAYS_BEFORE)
-        lo = np.zeros(len(b), dtype=int)
-        cancelled = b.cancelled_on.notna().to_numpy()
-        gap = (b.arrival - b.cancelled_on).dt.days.to_numpy()
+        row = (arrival - days[0]).dt.days.to_numpy()
+        lead = (arrival - made_on).dt.days.clip(lower=0).to_numpy()
+        hi = np.minimum(lead, MAX_DAYS_BEFORE)
+        lo = np.zeros(len(arrival), dtype=int)
+        cancelled = cancelled_on.notna().to_numpy()
+        gap = (arrival - cancelled_on).dt.days.to_numpy()
         lo[cancelled] = np.clip(gap[cancelled], 0, None)
         keep = hi > lo
         diff = np.zeros((len(days), MAX_DAYS_BEFORE + 1))
-        g = b.guests.to_numpy()
+        g = guests.to_numpy()
         np.add.at(diff, (row[keep], lo[keep]), g[keep])
         np.add.at(diff, (row[keep], hi[keep]), -g[keep])
         book = np.cumsum(diff, axis=1)[:, :MAX_DAYS_BEFORE].round().astype(int)

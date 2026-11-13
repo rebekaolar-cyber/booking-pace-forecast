@@ -35,21 +35,26 @@ class Signals:
     same_day_last_year: float
 
 
-def reference_days(hotel: Hotel, day: pd.Timestamp, horizon: int) -> list[pd.Timestamp]:
-    """The most recent same weekdays that were already over when the forecast was made."""
+def reference_days(hotel: Hotel, day: pd.Timestamp, horizon: int,
+                   skip_closed: bool = False) -> list[pd.Timestamp]:
+    """The most recent same weekdays that were already over when the forecast was made.
+
+    skip_closed: leave out days with no guests at all (the place was closed), so a closed
+    holiday doesn't drag the average down.
+    """
     run_day = day - pd.Timedelta(days=horizon - 1)
     found = []
     for k in range(1, WEEKS + 9):
         ref = day - pd.Timedelta(weeks=k)
-        if ref < run_day and hotel.index(ref) is not None:
+        if ref < run_day and hotel.index(ref) is not None and not (skip_closed and hotel.actual[ref] == 0):
             found.append(ref)
         if len(found) == WEEKS:
             break
     return found
 
 
-def signals(hotel: Hotel, day: pd.Timestamp, horizon: int) -> Signals | None:
-    refs = reference_days(hotel, day, horizon)
+def signals(hotel: Hotel, day: pd.Timestamp, horizon: int, skip_closed: bool = False) -> Signals | None:
+    refs = reference_days(hotel, day, horizon, skip_closed)
     if len(refs) < MIN_WEEKS:
         return None
     k = horizon - 1  # days before the arrival day

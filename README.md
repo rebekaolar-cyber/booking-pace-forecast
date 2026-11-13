@@ -4,11 +4,40 @@
 ![Python 3.13](https://img.shields.io/badge/python-3.13-blue)
 ![Data: CC BY 4.0](https://img.shields.io/badge/data-CC%20BY%204.0-lightgrey)
 
-**On 119,390 real hotel bookings, a forecast that reads the reservation book makes 53-68% smaller
-errors a week ahead than the usual weekday average.** It is two lines of logic, it beats a
-gradient-boosting model up to 7 days out, and every number below can be reproduced with one command.
+**Upload your reservations export and get the next two weeks: guests per day, a range you can
+trust, the days that need a second look, and how many people to schedule.** Behind it is a
+forecast that reads the reservation book. On 119,390 real hotel bookings it makes 53-68% smaller
+errors a week ahead than the usual weekday average, and it beats a gradient-boosting model up to
+7 days out.
 
-**▶ [Try the live demo](#live-demo)** · [Results](#results) · [How it works](#how-it-works) · [Run it yourself](#run-it-yourself)
+**▶ [Use it](#use-it-on-your-own-reservations)** · [Results](#results) · [How it works](#how-it-works) · [Run it yourself](#run-it-yourself)
+
+![Planning the next two weeks](docs/demo.png)
+
+## Use it on your own reservations
+
+1. **Export your reservations** from your booking system (TheFork, Zenchef, Resengo, OpenTable,
+   a hotel PMS…) as CSV or Excel: one row per reservation, the last 3 months or more plus
+   everything booked ahead. You only need three columns: visit date, number of guests, and the day
+   it was made. A cancellation date and a status column make it better. Leave out names and
+   contact details; they aren't needed.
+2. **Upload it.** Columns are recognised automatically in English and Dutch (`Datum`,
+   `Aantal personen`, `Aangemaakt op`, `Geannuleerd op`…), whether the file uses commas or
+   semicolons and whether dates have times. Statuses like *cancelled / geannuleerd* and
+   *no-show / niet verschenen* are understood. Anything it can't place, you pick from a dropdown.
+3. **Read the plan.** For each day you get what's booked so far, the usual for that weekday, the
+   forecast, a likely range, a flag on days running 15%+ busier or quieter than usual, and staff
+   per role from your own rules (guests per person, with a minimum). Download it as Excel or CSV.
+
+**Every plan is checked on your own data first.** The app replays your last 8 weeks, rebuilding the
+book as it stood each morning, and shows how far off the forecast would have been at each distance.
+That check sets the likely range: the error that 8 in 10 past days stayed within. On the hotel data,
+across 50 different two-week plans, 79-80% of days landed inside the range, so it means what it says.
+
+![The plan with staffing](docs/plan-table.png)
+
+No file at hand? The app has a sample: a real city hotel's bookings as they stood on 31 May 2017,
+shown next to what really happened afterwards.
 
 ![Forecast error by days ahead](reports/error_by_horizon.png)
 
@@ -85,16 +114,15 @@ Backtests leak the future easily. These guard against it, and run on every push:
 - **Strict time split:** training ends 28 Feb 2017, testing starts 1 Mar 2017.
 - **The published numbers are what the code produces.** A test reruns the whole backtest and fails
   if `reports/results.json` differs.
+- **An old export can't see the future.** A plan made from an export date gives exactly the same
+  answer whether or not later bookings are in the file (`tests/test_plan.py`).
 
-## Live demo
+## Inside the app's accuracy tab
 
-The interactive version lets you pick a hotel, how far ahead to forecast and any day, and shows the
-booking curve behind the number.
+The second tab replays the full benchmark: pick a hotel, how far ahead to forecast and any day, and
+see the booking curve behind the number.
 
-![Demo](docs/demo.png)
 ![Looking inside one day](docs/demo-day.png)
-
-Run it locally with `streamlit run streamlit_app.py`.
 
 ## Run it yourself
 
@@ -105,8 +133,8 @@ pip install -r requirements.txt pytest
 
 PYTHONPATH=src python -m pace.backtest   # rebuilds reports/results.md (about 10 seconds)
 PYTHONPATH=src python -m pace.charts     # redraws the three charts
-python -m pytest                         # 17 tests
-streamlit run streamlit_app.py           # the demo
+python -m pytest                         # 27 tests
+streamlit run streamlit_app.py           # the app
 ```
 
 ```
@@ -116,7 +144,8 @@ src/pace/
   ml.py         gradient boosting on the same signals (scikit-learn)
   backtest.py   replay Mar-Aug 2017 at 1-30 days ahead, write reports/
   charts.py     the README charts
-tests/          book rebuilding, no-leakage checks, reproducible results
+  plan.py       read any reservations export, plan the next days, self-check, staffing
+tests/          book rebuilding, no-leakage checks, export reading, reproducible results
 streamlit_app.py
 ```
 
