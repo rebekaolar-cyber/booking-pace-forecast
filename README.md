@@ -171,8 +171,9 @@ python -m evals.compare evals/results/A.json evals/results/B.json   # two runs s
 In GitHub Actions, [`eval.yml`](.github/workflows/eval.yml) runs the live eval on every push to
 `main` when the `ANTHROPIC_API_KEY` secret is set. Run it by hand from the Actions tab
 (workflow_dispatch) with three inputs: `sample` (number of questions, default 10), `model`
-(default `claude-haiku-5-5`) and `prompt` (default `v2`). It fails the build when any number can't
-be traced or a run ends in an error, false alarms included.
+(default `claude-haiku-5-5`) and `prompt` (default `v2`). It fails the build when a run ends in an
+error or fewer than 80% of answers have every number traced. Flags above that line show up as
+warnings on the run, to check by hand, because the scorer still has the false alarms listed above.
 
 ## The forecast
 
@@ -304,7 +305,7 @@ cd booking-pace-forecast
 pip install -r requirements.txt -r requirements-agent.txt -r requirements-dev.txt
 
 streamlit run streamlit_app.py           # the app, three tabs
-python -m pytest -q                      # 439 tests, none of them calls the API
+python -m pytest -q                      # 440 tests, none of them calls the API
 PYTHONPATH=src python -m pace.backtest   # rebuilds reports/results.md
 PYTHONPATH=src python -m pace.charts     # redraws the charts
 ```

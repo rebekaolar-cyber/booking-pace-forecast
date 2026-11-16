@@ -85,6 +85,14 @@ def test_invented_number_fails_the_run(stub_agent, tmp_path):
     assert all(r["ungrounded_detail"][0]["number"] == 9999.0 for r in data["results"])
 
 
+def test_a_lower_bar_warns_instead_of_failing(stub_agent, tmp_path, capsys):
+    """CI's --min-faithfulness 0.8: flags above the bar become warnings, below it a failure."""
+    stub_agent(liar_answer)
+    assert run.main(["--ids", "sd01", "--out", str(tmp_path), "--min-faithfulness", "0"]) == 0
+    assert "::warning::Untraced numbers" in capsys.readouterr().out
+    assert run.main(["--ids", "sd01", "--out", str(tmp_path), "--min-faithfulness", "0.8"]) == 1
+
+
 def test_sample_is_stratified_and_fixed():
     questions = run.load_questions()
     a = run.stratified_sample(questions, 10, seed=0)
