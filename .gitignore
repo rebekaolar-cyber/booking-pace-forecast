@@ -5,3 +5,7 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+logs/
+.streamlit/secrets.toml
+.env
+evals/results/*.json

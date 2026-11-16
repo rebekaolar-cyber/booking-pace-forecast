@@ -1,0 +1,558 @@
+# Eval set for the planning assistant: 50 questions.
+#
+# No expected numbers are written here. The reference numbers come from running the
+# `calls` below with run_tool() on the backend being evaluated, at eval time. So the same
+# set works on the FakeBackend and on the real forecast.
+#
+# Today = 2017-06-01, a Thursday (the morning after the 31 May sample export). The forecast
+# reaches 28 days ahead: 2017-06-01 .. 2017-06-28. 2017-05-31 is already in the past.
+#
+# expect:
+#   tools:          tools that must be called (get_today_and_data_range is always allowed)
+#   tools_any_of:   alternatives: at least one listed set must be called in full, e.g.
+#                   [[get_flagged_days], [get_forecast]] because get_forecast also returns
+#                   the busy/quiet flag of every day
+#   allowed_tools:  extra tools that are fine to call but not required
+#   calls:          reference calls; their results define the expected numbers.
+#                   The assistant must make a call with the same date/role args
+#                   (for range tools, a wider range covering these days also counts; a
+#                   reference call without a role is also matched by per-role calls; a
+#                   get_flagged_days reference is also matched by a covering get_forecast).
+#   numbers_from:   result fields whose values the answer should contain
+#   must_refuse:    out of scope or impossible: no invented numbers, name the limit
+#   may_share_forecast: a refusal may still quote real tool numbers (e.g. pricing)
+#   note:           how a relative date was read
+
+# ----------------------------------------------------------------- single_day (8)
+- id: sd01
+  category: single_day
+  lang: en
+  question: How many guests do we expect on Saturday 3 June 2017?
+  expect:
+    tools: [get_forecast]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-03", end_date: "2017-06-03"}}
+    numbers_from: [forecast_guests, range_low_guests, range_high_guests]
+
+- id: sd03
+  category: single_day
+  lang: en
+  question: How many guests are already booked for Friday 9 June 2017?
+  expect:
+    tools: [get_forecast]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-09", end_date: "2017-06-09"}}
+    numbers_from: [booked_so_far_guests]
+
+- id: sd04
+  category: single_day
+  lang: en
+  question: Is Tuesday 20 June 2017 going to be busier or quieter than a normal Tuesday?
+  expect:
+    tools: [get_forecast]
+    allowed_tools: [get_flagged_days]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-20", end_date: "2017-06-20"}}
+    numbers_from: [forecast_guests]
+
+- id: sd05
+  category: single_day
+  lang: en
+  question: Give me the guest forecast for June 15th 2017.
+  expect:
+    tools: [get_forecast]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-15", end_date: "2017-06-15"}}
+    numbers_from: [forecast_guests, range_low_guests, range_high_guests]
+
+- id: sd06
+  category: single_day
+  lang: en
+  question: What is the likely lowest and highest number of guests for Sunday 11 June 2017?
+  expect:
+    tools: [get_forecast]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-11", end_date: "2017-06-11"}}
+    numbers_from: [range_low_guests, range_high_guests]
+
+- id: sd07
+  category: single_day
+  lang: en
+  question: How many guests on Thursday 1 June 2017, compared with a usual Thursday?
+  expect:
+    tools: [get_forecast]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-01", end_date: "2017-06-01"}}
+    numbers_from: [forecast_guests, usual_for_weekday_guests]
+
+- id: sd09
+  category: single_day
+  lang: en
+  question: Expected number of guests on Monday 26 June 2017?
+  expect:
+    tools: [get_forecast]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-26", end_date: "2017-06-26"}}
+    numbers_from: [forecast_guests, range_low_guests, range_high_guests]
+
+- id: sd10
+  category: single_day
+  lang: en
+  question: How busy will Saturday 10 June 2017 be compared with a normal Saturday?
+  expect:
+    tools: [get_forecast]
+    allowed_tools: [get_flagged_days]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-10", end_date: "2017-06-10"}}
+    numbers_from: [forecast_guests]
+
+# ----------------------------------------------------------------- date_range (8)
+- id: dr01
+  category: date_range
+  lang: en
+  question: Give me the daily guest forecast from 5 to 11 June 2017.
+  expect:
+    tools: [get_forecast]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-05", end_date: "2017-06-11"}}
+    numbers_from: [forecast_guests]
+
+- id: dr02
+  category: date_range
+  lang: en
+  question: Which days between 2017-06-02 and 2017-06-28 are flagged as unusually busy or quiet?
+  expect:
+    tools_any_of: [[get_flagged_days], [get_forecast]]
+    calls:
+      - {tool: get_flagged_days, args: {start_date: "2017-06-02", end_date: "2017-06-28"}}
+
+- id: dr03
+  category: date_range
+  lang: en
+  question: What's the busiest day between 12 and 18 June 2017?
+  expect:
+    tools: [get_forecast]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-12", end_date: "2017-06-18"}}
+
+- id: dr04
+  category: date_range
+  lang: en
+  question: What's the forecast for the weekend of 17 and 18 June 2017?
+  expect:
+    tools: [get_forecast]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-17", end_date: "2017-06-18"}}
+    numbers_from: [forecast_guests]
+
+- id: dr05
+  category: date_range
+  lang: en
+  question: Are there any unusually quiet days from 19 to 25 June 2017?
+  expect:
+    tools_any_of: [[get_flagged_days], [get_forecast]]
+    calls:
+      - {tool: get_flagged_days, args: {start_date: "2017-06-19", end_date: "2017-06-25"}}
+
+- id: dr06
+  category: date_range
+  lang: en
+  question: Show me expected guests for 1 to 4 June 2017, with the likely range for each day.
+  expect:
+    tools: [get_forecast]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-01", end_date: "2017-06-04"}}
+    numbers_from: [forecast_guests, range_low_guests, range_high_guests]
+
+- id: dr07
+  category: date_range
+  lang: en
+  question: How do 22 to 25 June 2017 compare with what is usual for those weekdays?
+  expect:
+    tools: [get_forecast]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-22", end_date: "2017-06-25"}}
+    numbers_from: [forecast_guests]
+
+- id: dr08
+  category: date_range
+  lang: en
+  question: List any flagged busy days between 2017-06-05 and 2017-06-16.
+  expect:
+    tools_any_of: [[get_flagged_days], [get_forecast]]
+    calls:
+      - {tool: get_flagged_days, args: {start_date: "2017-06-05", end_date: "2017-06-16"}}
+
+# ----------------------------------------------------------------- staffing (8)
+- id: st01
+  category: staffing
+  lang: en
+  question: How many bar staff do I need on Saturday 3 June 2017?
+  expect:
+    tools: [get_staffing]
+    calls:
+      - {tool: get_staffing, args: {date: "2017-06-03", role: bar}}
+    numbers_from: [count]
+
+- id: st02
+  category: staffing
+  lang: en
+  question: How many people do I need in the kitchen on Friday 9 June 2017?
+  expect:
+    tools: [get_staffing]
+    calls:
+      - {tool: get_staffing, args: {date: "2017-06-09", role: kitchen}}
+    numbers_from: [count]
+
+- id: st03
+  category: staffing
+  lang: en
+  question: Staff plan for 2017-06-10, how many people per role?
+  expect:
+    tools: [get_staffing]
+    calls:
+      - {tool: get_staffing, args: {date: "2017-06-10"}}
+    numbers_from: [count]
+
+- id: st04
+  category: staffing
+  lang: en
+  question: How many floor staff should I schedule for Sunday 4 June 2017?
+  expect:
+    tools: [get_staffing]
+    calls:
+      - {tool: get_staffing, args: {date: "2017-06-04", role: floor}}
+    numbers_from: [count]
+
+- id: st05
+  category: staffing
+  lang: en
+  question: What staffing do I need on 16 June 2017, and how many guests is that based on?
+  expect:
+    tools: [get_staffing]
+    allowed_tools: [get_forecast]
+    calls:
+      - {tool: get_staffing, args: {date: "2017-06-16"}}
+    numbers_from: [count, forecast_guests]
+
+- id: st06
+  category: staffing
+  lang: en
+  question: Bar staff needed on 24 June 2017?
+  expect:
+    tools: [get_staffing]
+    calls:
+      - {tool: get_staffing, args: {date: "2017-06-24", role: bar}}
+    numbers_from: [count]
+
+- id: st07
+  category: staffing
+  lang: en
+  question: How many kitchen staff for 2017-06-20?
+  expect:
+    tools: [get_staffing]
+    calls:
+      - {tool: get_staffing, args: {date: "2017-06-20", role: kitchen}}
+    numbers_from: [count]
+
+- id: st08
+  category: staffing
+  lang: en
+  question: How did you work out how many floor staff I need on 17 June 2017?
+  expect:
+    tools: [get_staffing]
+    calls:
+      - {tool: get_staffing, args: {date: "2017-06-17", role: floor}}
+    numbers_from: [count]
+
+# ----------------------------------------------------------------- dutch (8)
+- id: nl01
+  category: dutch
+  lang: nl
+  question: Hoeveel gasten verwachten we op zaterdag 3 juni 2017?
+  expect:
+    tools: [get_forecast]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-03", end_date: "2017-06-03"}}
+    numbers_from: [forecast_guests, range_low_guests, range_high_guests]
+
+- id: nl02
+  category: dutch
+  lang: nl
+  question: Hoeveel barpersoneel heb ik nodig op zaterdag 10 juni 2017?
+  expect:
+    tools: [get_staffing]
+    calls:
+      - {tool: get_staffing, args: {date: "2017-06-10", role: bar}}
+    numbers_from: [count]
+
+- id: nl03
+  category: dutch
+  lang: nl
+  question: Welke dagen tussen 1 en 14 juni 2017 zijn veel drukker of rustiger dan normaal?
+  expect:
+    tools_any_of: [[get_flagged_days], [get_forecast]]
+    calls:
+      - {tool: get_flagged_days, args: {start_date: "2017-06-01", end_date: "2017-06-14"}}
+
+- id: nl04
+  category: dutch
+  lang: nl
+  question: Hoeveel keukenpersoneel is er nodig op vrijdag 16 juni 2017?
+  expect:
+    tools: [get_staffing]
+    calls:
+      - {tool: get_staffing, args: {date: "2017-06-16", role: kitchen}}
+    numbers_from: [count]
+
+- id: nl05
+  category: dutch
+  lang: nl
+  question: Hoe betrouwbaar is de voorspelling eigenlijk?
+  expect:
+    tools: [get_accuracy]
+    calls:
+      - {tool: get_accuracy, args: {}}
+    numbers_from: [mean_abs_error_guests, range_coverage_pct]
+
+- id: nl06
+  category: dutch
+  lang: nl
+  question: Wat is de verwachting voor morgen?
+  expect:
+    tools: [get_today_and_data_range, get_forecast]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-02", end_date: "2017-06-02"}}
+    numbers_from: [forecast_guests]
+    note: morgen (tomorrow) = 2017-06-02 (Friday)
+
+- id: nl07
+  category: dutch
+  lang: nl
+  question: Geef de voorspelling voor 19 tot en met 25 juni 2017.
+  expect:
+    tools: [get_forecast]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-19", end_date: "2017-06-25"}}
+    numbers_from: [forecast_guests]
+
+- id: nl08
+  category: dutch
+  lang: nl
+  question: Hoeveel gasten verwachten we op 15 juli 2017?
+  expect:
+    tools: []
+    allowed_tools: [get_forecast]
+    calls: []
+    must_refuse: true
+    note: 2017-07-15 is beyond the 28-day horizon (last day 2017-06-28)
+
+# ----------------------------------------------------------------- out_of_scope (7)
+- id: oos01
+  category: out_of_scope
+  lang: en
+  question: How many guests did we have on 31 May 2017?
+  expect:
+    tools: []
+    allowed_tools: [get_forecast, get_staffing]
+    calls: []
+    must_refuse: true
+    note: 2017-05-31 is yesterday (the export date), so in the past; the tool only looks ahead
+
+- id: oos02
+  category: out_of_scope
+  lang: en
+  question: What will the guest forecast be for 15 August 2017?
+  expect:
+    tools: []
+    allowed_tools: [get_forecast]
+    calls: []
+    must_refuse: true
+    note: beyond the 28-day horizon
+
+- id: oos03
+  category: out_of_scope
+  lang: en
+  question: Should I raise my menu prices for Saturday 10 June 2017?
+  expect:
+    tools: []
+    allowed_tools: [get_forecast, get_flagged_days]
+    calls: []
+    must_refuse: true
+    may_share_forecast: true
+    note: pricing advice is out of scope; quoting the real forecast is fine
+
+- id: oos04
+  category: out_of_scope
+  lang: en
+  question: How many dishwashers do I need on Saturday 3 June 2017?
+  expect:
+    tools: []
+    allowed_tools: [get_staffing, get_forecast]
+    calls: []
+    must_refuse: true
+    may_share_forecast: true
+    note: unknown role; known roles are bar, kitchen, floor
+
+- id: oos05
+  category: out_of_scope
+  lang: en
+  question: How busy will the Italian restaurant next door be on Saturday 3 June 2017?
+  expect:
+    tools: []
+    calls: []
+    must_refuse: true
+    note: another business
+
+- id: oos06
+  category: out_of_scope
+  lang: en
+  question: What will the weather be like on Saturday 3 June 2017?
+  expect:
+    tools: []
+    calls: []
+    must_refuse: true
+    note: no weather data
+
+- id: oos07
+  category: out_of_scope
+  lang: en
+  question: Can you book a table for 6 people on Saturday 3 June 2017?
+  expect:
+    tools: []
+    calls: []
+    must_refuse: true
+    note: the tools are read-only
+
+# ----------------------------------------------------------------- relative_dates (8)
+- id: rd01
+  category: relative_dates
+  lang: en
+  question: How many guests do we expect tomorrow?
+  expect:
+    tools: [get_today_and_data_range, get_forecast]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-02", end_date: "2017-06-02"}}
+    numbers_from: [forecast_guests, range_low_guests, range_high_guests]
+    note: tomorrow = 2017-06-02 (Friday)
+
+- id: rd02
+  category: relative_dates
+  lang: en
+  question: What's the forecast for this coming Saturday?
+  expect:
+    tools: [get_today_and_data_range, get_forecast]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-03", end_date: "2017-06-03"}}
+    numbers_from: [forecast_guests, range_low_guests, range_high_guests]
+    note: asked on Thursday 2017-06-01; this coming Saturday = 2017-06-03
+
+- id: rd03
+  category: relative_dates
+  lang: en
+  question: How many bar staff do I need the day after tomorrow?
+  expect:
+    tools: [get_today_and_data_range, get_staffing]
+    calls:
+      - {tool: get_staffing, args: {date: "2017-06-03", role: bar}}
+    numbers_from: [count]
+    note: the day after tomorrow = 2017-06-03 (Saturday)
+
+- id: rd04
+  category: relative_dates
+  lang: en
+  question: Give me the forecast for this weekend.
+  expect:
+    tools: [get_today_and_data_range, get_forecast]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-03", end_date: "2017-06-04"}}
+    numbers_from: [forecast_guests]
+    note: this weekend = Saturday 2017-06-03 and Sunday 2017-06-04 (a range that also includes Friday counts)
+
+- id: rd05
+  category: relative_dates
+  lang: en
+  question: What will the guest numbers look like in 10 days?
+  expect:
+    tools: [get_today_and_data_range, get_forecast]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-11", end_date: "2017-06-11"}}
+    numbers_from: [forecast_guests]
+    note: in 10 days = 2017-06-11 (Sunday)
+
+- id: rd06
+  category: relative_dates
+  lang: en
+  question: Are any days in the next two weeks flagged as unusually busy or quiet?
+  expect:
+    tools: [get_today_and_data_range]
+    tools_any_of: [[get_flagged_days], [get_forecast]]
+    calls:
+      - {tool: get_flagged_days, args: {start_date: "2017-06-02", end_date: "2017-06-14"}}
+    note: >-
+      next two weeks; every reasonable reading (14 days from today, 2017-06-01..2017-06-14, or
+      from tomorrow, 2017-06-02..2017-06-15) covers 2017-06-02..2017-06-14
+
+- id: rd07
+  category: relative_dates
+  lang: en
+  question: How many kitchen staff do I need next Saturday?
+  expect:
+    tools: [get_today_and_data_range, get_staffing]
+    calls:
+      - {tool: get_staffing, args: {date: "2017-06-03", role: kitchen}}
+    alt_calls:
+      - {tool: get_staffing, args: {date: "2017-06-10", role: kitchen}}
+    numbers_from: [count]
+    note: >-
+      Asked on Thursday 2017-06-01. "Next Saturday" can mean 2017-06-03 (two days away) or
+      2017-06-10; both readings are accepted (alt_calls), and the answer should say which date
+      it used.
+
+- id: rd08
+  category: relative_dates
+  lang: nl
+  question: Hoeveel gasten verwachten we volgende zaterdag?
+  expect:
+    tools: [get_today_and_data_range, get_forecast]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-03", end_date: "2017-06-03"}}
+    alt_calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-10", end_date: "2017-06-10"}}
+    numbers_from: [forecast_guests, range_low_guests, range_high_guests]
+    note: >-
+      Asked on Thursday 2017-06-01. "Volgende zaterdag" (next Saturday) can mean 2017-06-03 or
+      2017-06-10; both readings are accepted (alt_calls), and the answer should say which date it
+      used. The only Dutch item outside the dutch category.
+
+# ----------------------------------------------------------------- trust_accuracy (3)
+- id: ta01
+  category: trust_accuracy
+  lang: en
+  question: How accurate has the forecast been so far?
+  expect:
+    tools: [get_accuracy]
+    calls:
+      - {tool: get_accuracy, args: {}}
+    numbers_from: [mean_abs_error_guests, range_coverage_pct]
+
+- id: ta02
+  category: trust_accuracy
+  lang: en
+  question: How sure are you about the forecast for Saturday 17 June 2017?
+  expect:
+    tools: [get_forecast, get_accuracy]
+    calls:
+      - {tool: get_forecast, args: {start_date: "2017-06-17", end_date: "2017-06-17"}}
+      - {tool: get_accuracy, args: {}}
+    numbers_from: [range_low_guests, range_high_guests]
+
+- id: ta03
+  category: trust_accuracy
+  lang: en
+  question: How often does the real number of guests land inside the likely range?
+  expect:
+    tools: [get_accuracy]
+    calls:
+      - {tool: get_accuracy, args: {}}
+    numbers_from: [range_coverage_pct]

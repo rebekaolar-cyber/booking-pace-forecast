@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent))  # agent/ and app_pages/ for the assistant tab
 
 import altair as alt  # noqa: E402
 import numpy as np  # noqa: E402
@@ -72,7 +73,8 @@ st.title("How many guests are coming?")
 st.caption("A forecast for the next two weeks that reads your reservation book: the usual number "
            "for each weekday, corrected by how far bookings are running ahead of or behind normal.")
 
-plan_tab, proof_tab = st.tabs(["📅  Plan the next two weeks", "📊  How accurate is it?"])
+plan_tab, proof_tab, ask_tab = st.tabs(["📅  Plan the next two weeks", "📊  How accurate is it?",
+                                        "💬  Ask the assistant"])
 
 def plan_page():
     source = st.radio(
@@ -421,5 +423,21 @@ The ML model said **{row.gradient_boosting:.0f}**. **{row.actual}** guests arriv
 Code, tests and charts: [{REPO.split('github.com/')[1]}]({REPO})
 """
         )
+
+@st.cache_resource(show_spinner=False)
+def sample_backend():
+    """The assistant's tools on the sample export: the same numbers as the Plan tab's sample."""
+    from agent.real_backend import RealBackend
+    return RealBackend()
+
+
+with ask_tab:
+    from app_pages.assistant import render as render_assistant
+
+    st.info("The assistant answers from the **sample hotel's** forecast (export of 31 May 2017, so "
+            "**today is Thursday 1 June 2017**) with the default staffing rules. Every number it "
+            "gives comes from the same tools as the Plan tab; it never sees your uploaded file.",
+            icon="ℹ️")
+    render_assistant(sample_backend())
 
 st.caption(f"Built by Rebeka Olar · [GitHub]({REPO}) · Your file is processed in memory and not saved.")
