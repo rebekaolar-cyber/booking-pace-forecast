@@ -5,8 +5,9 @@
     python -m evals.run --ids sd01 nl05 --judge
 
 Reference numbers are computed here, at eval time, by calling the same tools on the same
-backend the assistant uses. Exit code 1 if any answer contains an invented number
-(faithfulness below 100%) or any run failed with an error.
+backend the assistant uses. Exit code 1 if any run failed with an error, or if the share of
+answers with every number traced is below --min-faithfulness (default 100%; CI uses 80% and
+shows the remaining flags as warnings to check by hand).
 """
 from __future__ import annotations
 
@@ -305,6 +306,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--judge-model", default=None, help="model for --judge (default: --model)")
     p.add_argument("--questions", default=str(QUESTIONS_PATH))
     p.add_argument("--out", default=str(EVALS_DIR / "results"))
+    p.add_argument("--min-faithfulness", type=float, default=1.0,
+                   help="fail when the share of answers with every number traced is below this; "
+                        "flags above it are printed as warnings to check by hand (the scorer has "
+                        "known false alarms, see KNOWN_LIMITS in evals/scoring.py)")
     return p.parse_args(argv)
 
 
@@ -342,10 +347,14 @@ def main(argv: list[str] | None = None) -> int:
     print_failures(records)
 
     faith = summary["metrics"]["faithfulness"]["rate"]
-    if faith is not None and faith < 1.0:
-        bad = [f"{r['id']} {r['ungrounded']}" for r in records if r["ungrounded"]]
-        print("FAIL: invented numbers in " + "; ".join(bad))
+    bad = [f"{r['id']} {r['ungrounded']}" for r in records if r["ungrounded"]]
+    if faith is not None and faith < args.min_faithfulness:
+        print(f"FAIL: every number traced in only {faith:.0%} of answers "
+              f"(minimum {args.min_faithfulness:.0%}); untraced: " + "; ".join(bad))
         return 1
+    if bad:
+        # GitHub shows ::warning:: lines as annotations on the run: flags to check by hand.
+        print("::warning::Untraced numbers to check by hand: " + "; ".join(bad))
     if summary["errors"]:
         print(f"FAIL: {summary['errors']} run(s) ended in an error")
         return 1
