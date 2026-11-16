@@ -1,0 +1,4 @@
+# The AI assistant layer: MCP server and eval (the app itself only needs anthropic,
+# which is in requirements.txt).
+mcp==2.3.0
+pyyaml==6.0.3
