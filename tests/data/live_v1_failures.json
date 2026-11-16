@@ -1,0 +1,493 @@
+[
+ {
+  "id": "sd05",
+  "question": "Give me the guest forecast for June 15th 2017.",
+  "answer": "**Thu 15 Jun 2017: forecast 170 guests (range 154-186)**\n\n- Already booked: 162\n- Usual for a Thursday: 153\n- Forecast is about 10% above usual, not flagged as busy or quiet.\n\nBased on: forecast.",
+  "calls": [
+   {
+    "tool": "get_today_and_data_range",
+    "args": {}
+   },
+   {
+    "tool": "get_forecast",
+    "args": {
+     "start_date": "2017-06-15",
+     "end_date": "2017-06-15"
+    }
+   }
+  ],
+  "still_fails": [
+   "faithfulness"
+  ]
+ },
+ {
+  "id": "sd09",
+  "question": "Expected number of guests on Monday 26 June 2017?",
+  "answer": "**Mon 26 Jun 2017: forecast 119 guests (likely range 103-136).**\n\n- 89 guests already booked\n- Usual for a Monday: 136\n- Forecast is about 12% below usual, not flagged as busy or quiet\n\nThe forecast is 25 days ahead. In backtests, errors at 14 days were about ±16 guests, so the range may be somewhat wider than usual this far out.\n\nBased on: forecast, accuracy check.",
+  "calls": [
+   {
+    "tool": "get_today_and_data_range",
+    "args": {}
+   },
+   {
+    "tool": "get_forecast",
+    "args": {
+     "start_date": "2017-06-26",
+     "end_date": "2017-06-26"
+    }
+   },
+   {
+    "tool": "get_accuracy",
+    "args": {}
+   }
+  ],
+  "still_fails": [
+   "tool_choice"
+  ]
+ },
+ {
+  "id": "dr07",
+  "question": "How do 22 to 25 June 2017 compare with what is usual for those weekdays?",
+  "answer": "Compared with what is usual for each weekday, 22–25 June 2017 looks mixed: three quiet days and one busy Sunday.\n\n- **Thu 22 Jun:** forecast 144 guests (range 128–160), usual 153, about 6% below.\n- **Fri 23 Jun:** forecast 139 guests (range 123–155), usual 173, about 20% below. Flagged quiet.\n- **Sat 24 Jun:** forecast 116 guests (range 100–132), usual 136, about 15% below.\n- **Sun 25 Jun:** forecast 184 guests (range 168–200), usual 123, about 50% above. Flagged busy.\n\nBookings so far are 134, 135, 106 and 185 guests respectively.\n\nBased on: forecast.",
+  "calls": [
+   {
+    "tool": "get_today_and_data_range",
+    "args": {}
+   },
+   {
+    "tool": "get_forecast",
+    "args": {
+     "start_date": "2017-06-22",
+     "end_date": "2017-06-25"
+    }
+   }
+  ],
+  "still_fails": [
+   "faithfulness"
+  ]
+ },
+ {
+  "id": "st01",
+  "question": "How many bar staff do I need on Saturday 3 June 2017?",
+  "answer": "Sat 3 Jun: you need **3 bar staff**.\n\n- Forecast: 138 guests (likely range 129–147)\n- Rule: 1 bar staff per 60 guests, rounded up\n\nBased on: staffing rules, forecast.",
+  "calls": [
+   {
+    "tool": "get_today_and_data_range",
+    "args": {}
+   },
+   {
+    "tool": "get_staffing",
+    "args": {
+     "date": "2017-06-03",
+     "role": "bar"
+    }
+   },
+   {
+    "tool": "get_forecast",
+    "args": {
+     "start_date": "2017-06-03",
+     "end_date": "2017-06-03"
+    }
+   }
+  ],
+  "still_fails": []
+ },
+ {
+  "id": "st02",
+  "question": "How many people do I need in the kitchen on Friday 9 June 2017?",
+  "answer": "Fri 9 Jun: **6 kitchen staff** needed.\n\n- Forecast: 183 guests (likely range 169–197)\n- Rule: 1 kitchen staff per 35 guests, rounded up, minimum 2\n\nBased on: forecast, staffing rules.",
+  "calls": [
+   {
+    "tool": "get_today_and_data_range",
+    "args": {}
+   },
+   {
+    "tool": "get_staffing",
+    "args": {
+     "date": "2017-06-09",
+     "role": "kitchen"
+    }
+   },
+   {
+    "tool": "get_forecast",
+    "args": {
+     "start_date": "2017-06-09",
+     "end_date": "2017-06-09"
+    }
+   }
+  ],
+  "still_fails": []
+ },
+ {
+  "id": "st03",
+  "question": "Staff plan for 2017-06-10, how many people per role?",
+  "answer": "**Sat 10 Jun: forecast 74 guests (range 61-88).** That's well below the usual 136 for a Saturday, and the day is flagged quiet.\n\n- **Floor:** 3\n- **Bar:** 2\n- **Kitchen:** 3\n\nBased on: forecast, staffing rules.",
+  "calls": [
+   {
+    "tool": "get_today_and_data_range",
+    "args": {}
+   },
+   {
+    "tool": "get_staffing",
+    "args": {
+     "date": "2017-06-10"
+    }
+   },
+   {
+    "tool": "get_forecast",
+    "args": {
+     "start_date": "2017-06-10",
+     "end_date": "2017-06-10"
+    }
+   }
+  ],
+  "still_fails": []
+ },
+ {
+  "id": "st04",
+  "question": "How many floor staff should I schedule for Sunday 4 June 2017?",
+  "answer": "**Sun 4 Jun: schedule 5 floor staff.**\n\n- Forecast: 114 guests (likely range 104-124)\n- Booked so far: 117 guests\n- Usual for a Sunday: 123 guests\n- Your rule is 1 floor person per 25 guests, rounded up, minimum 2. The 5 staff holds across the whole likely range.\n\nBased on: staffing rules, forecast.",
+  "calls": [
+   {
+    "tool": "get_today_and_data_range",
+    "args": {}
+   },
+   {
+    "tool": "get_staffing",
+    "args": {
+     "date": "2017-06-04",
+     "role": "floor"
+    }
+   },
+   {
+    "tool": "get_forecast",
+    "args": {
+     "start_date": "2017-06-04",
+     "end_date": "2017-06-04"
+    }
+   }
+  ],
+  "still_fails": []
+ },
+ {
+  "id": "st06",
+  "question": "Bar staff needed on 24 June 2017?",
+  "answer": "Sat 24 jun: **2 bar staff** nodig.\n\n- Verwachte gasten: 116 (bereik 100–132)\n- Regel: 1 barmedewerker per 60 gasten, afgerond naar boven\n\nBased on: staffing rules, forecast.",
+  "calls": [
+   {
+    "tool": "get_today_and_data_range",
+    "args": {}
+   },
+   {
+    "tool": "get_staffing",
+    "args": {
+     "date": "2017-06-24",
+     "role": "bar"
+    }
+   },
+   {
+    "tool": "get_forecast",
+    "args": {
+     "start_date": "2017-06-24",
+     "end_date": "2017-06-24"
+    }
+   }
+  ],
+  "still_fails": [
+   "language"
+  ]
+ },
+ {
+  "id": "st07",
+  "question": "How many kitchen staff for 2017-06-20?",
+  "answer": "**Tue 20 Jun: 5 kitchen staff**\n\n- Forecast: 163 guests (likely range 147-179)\n- Busy day: 39.4% above the usual Tuesday (117 guests)\n- Rule: 1 kitchen staff per 35 forecast guests, rounded up, minimum 2\n- If guests land near the top of the range (179), the same rule could call for one more.\n\nBased on: staffing rules, forecast.",
+  "calls": [
+   {
+    "tool": "get_today_and_data_range",
+    "args": {}
+   },
+   {
+    "tool": "get_staffing",
+    "args": {
+     "date": "2017-06-20",
+     "role": "kitchen"
+    }
+   },
+   {
+    "tool": "get_forecast",
+    "args": {
+     "start_date": "2017-06-20",
+     "end_date": "2017-06-20"
+    }
+   }
+  ],
+  "still_fails": []
+ },
+ {
+  "id": "st08",
+  "question": "How did you work out how many floor staff I need on 17 June 2017?",
+  "answer": "On **Sat 17 Jun**, the plan is **7 floor staff**.\n\n- **Forecast:** 157 guests (likely range 141-173). Already booked: 154. Flagged busy, about 16% above the usual Saturday of 136.\n- **Rule:** 1 floor staff per 25 forecast guests, rounded up, minimum 2.\n- The staffing is based on the 157 point forecast, not on the top of the range. If it gets busier, I can check the numbers for that day again.\n\nBased on: staffing rules, forecast.",
+  "calls": [
+   {
+    "tool": "get_today_and_data_range",
+    "args": {}
+   },
+   {
+    "tool": "get_staffing",
+    "args": {
+     "date": "2017-06-17"
+    }
+   },
+   {
+    "tool": "get_forecast",
+    "args": {
+     "start_date": "2017-06-17",
+     "end_date": "2017-06-17"
+    }
+   }
+  ],
+  "still_fails": []
+ },
+ {
+  "id": "nl02",
+  "question": "Hoeveel barpersoneel heb ik nodig op zaterdag 10 juni 2017?",
+  "answer": "**Za 10 jun: 2 barpersoneel.**\n\n- Prognose: 74 gasten (range 61-88)\n- Er zijn al 70 gasten geboekt.\n- Deze zaterdag is rustig: de prognose ligt onder het gebruikelijke aantal voor een zaterdag (136).\n- Regel: 1 barmedewerker per 60 gasten, afgerond naar boven.\n\nGebaseerd op: prognose, personeelsregels.",
+  "calls": [
+   {
+    "tool": "get_today_and_data_range",
+    "args": {}
+   },
+   {
+    "tool": "get_staffing",
+    "args": {
+     "date": "2017-06-10",
+     "role": "bar"
+    }
+   },
+   {
+    "tool": "get_forecast",
+    "args": {
+     "start_date": "2017-06-10",
+     "end_date": "2017-06-10"
+    }
+   }
+  ],
+  "still_fails": []
+ },
+ {
+  "id": "nl03",
+  "question": "Welke dagen tussen 1 en 14 juni 2017 zijn veel drukker of rustiger dan normaal?",
+  "answer": "Deze dagen wijken минимaal 15% af van het gebruikelijke aantal gasten voor die weekdag:\n\n**Drukker:**\n- **ma 5 jun:** 182 gasten (172-193), normaal 136\n- **zo 11 jun:** 149 gasten (135-164), normaal 123\n- **ma 12 jun:** 165 gasten (152-179), normaal 136\n\n**Rustiger:**\n- **wo 7 jun:** 107 gasten (95-118), normaal 127\n- **za 10 jun:** 74 gasten (61-88), normaal 136\n\nDe overige dagen tussen 1 en 14 jun vallen binnen het normale patroon.\n\nGebaseerd op: vlaggen voor drukte/rust.",
+  "calls": [
+   {
+    "tool": "get_today_and_data_range",
+    "args": {}
+   },
+   {
+    "tool": "get_flagged_days",
+    "args": {
+     "start_date": "2017-06-01",
+     "end_date": "2017-06-14"
+    }
+   }
+  ],
+  "still_fails": [
+   "faithfulness"
+  ]
+ },
+ {
+  "id": "nl04",
+  "question": "Hoeveel keukenpersoneel is er nodig op vrijdag 16 juni 2017?",
+  "answer": "**Vr 16 jun: 4 keukenmedewerkers nodig.**\n\n- Verwachte gasten: 132 (bandbreedte 116–148)\n- Regel: 1 per 35 gasten, afgerond naar boven, minimum 2\n- Deze dag is gemarkeerd als rustig (ongeveer 23% minder dan gebruikelijk voor een vrijdag).\n\nGebaseerd op: personeelsregels, gastenprognose.",
+  "calls": [
+   {
+    "tool": "get_today_and_data_range",
+    "args": {}
+   },
+   {
+    "tool": "get_staffing",
+    "args": {
+     "date": "2017-06-16",
+     "role": "keuken"
+    }
+   },
+   {
+    "tool": "get_staffing",
+    "args": {
+     "date": "2017-06-16",
+     "role": "kitchen"
+    }
+   },
+   {
+    "tool": "get_forecast",
+    "args": {
+     "start_date": "2017-06-16",
+     "end_date": "2017-06-16"
+    }
+   }
+  ],
+  "still_fails": []
+ },
+ {
+  "id": "nl05",
+  "question": "Hoe betrouwbaar is de voorspelling eigenlijk?",
+  "answer": "De voorspelling is betrouwbaarder dan het gemiddelde van de weekdag, en het wordt beter naarmate de dag dichterbij komt.\n\nGemiddelde afwijking in gasten, in de terugblik van 8 weken:\n\n- **1 dag vooruit:** 5,1 gasten (weekdaggemiddelde: 26,7)\n- **3 dagen vooruit:** 6,8 gasten\n- **7 dagen vooruit:** 7,9 gasten\n- **14 dagen vooruit:** 10,6 gasten (weekdaggemiddelde: 26,5)\n\nDe bandbreedte (low-high) hoort bij 8 van de 10 dagen. Die is ongeveer ±6 gasten bij 1 dag vooruit, ±12 bij 7 dagen en ±16 bij 14 dagen.\n\nLet op: in de 14 dagen na de export viel 64% van de dagen binnen de bandbreedte, en dat is minder dan de beoogde 80%. De voorspelling was in die periode dus iets optimistischer dan de bandbreedte doet vermoeden.\n\nGebaseerd op: nauwkeurigheidscijfers (terugblik en uitkomsten).",
+  "calls": [
+   {
+    "tool": "get_accuracy",
+    "args": {}
+   }
+  ],
+  "still_fails": []
+ },
+ {
+  "id": "nl08",
+  "question": "Hoeveel gasten verwachten we op 15 juli 2017?",
+  "answer": "Ik kan voor **za 15 jul 2017** geen gastenaantal geven. Mijn voorspelling reikt tot en met **wo 28 jun 2017**, want vandaag is do 1 jun 2017.\n\nIk kan wel de verwachting geven voor elke dag tot en met 28 jun, inclusief de bandbreedte. Wil je dat?\n\nGebaseerd op: datumbereik van de data.",
+  "calls": [
+   {
+    "tool": "get_today_and_data_range",
+    "args": {}
+   }
+  ],
+  "still_fails": []
+ },
+ {
+  "id": "rd03",
+  "question": "How many bar staff do I need the day after tomorrow?",
+  "answer": "Bar staff for Sat 3 Jun: **3**.\n\n- Forecast: 138 guests (likely range 129–147)\n- Rule: 1 bar staff per 60 guests, rounded up. At the top of the range (147 guests), it would still be 3.\n\nBased on: staffing rules, forecast.",
+  "calls": [
+   {
+    "tool": "get_today_and_data_range",
+    "args": {}
+   },
+   {
+    "tool": "get_staffing",
+    "args": {
+     "date": "2017-06-03",
+     "role": "bar"
+    }
+   },
+   {
+    "tool": "get_forecast",
+    "args": {
+     "start_date": "2017-06-03",
+     "end_date": "2017-06-03"
+    }
+   }
+  ],
+  "still_fails": []
+ },
+ {
+  "id": "rd04",
+  "question": "Give me the forecast for this weekend.",
+  "answer": "**Dit weekend (city hotel):**\n\n- **Za 3 jun:** 138 gasten (range 129-147). Normaal voor een zaterdag: 136. Al geboekt: 135.\n- **Zo 4 jun:** 114 gasten (range 104-124). Normaal voor een zondag: 123. Al geboekt: 117.\n\nGeen van beide dagen is gemarkeerd als druk of rustig.\n\nBased on: forecast.",
+  "calls": [
+   {
+    "tool": "get_today_and_data_range",
+    "args": {}
+   },
+   {
+    "tool": "get_forecast",
+    "args": {
+     "start_date": "2017-06-03",
+     "end_date": "2017-06-04"
+    }
+   }
+  ],
+  "still_fails": [
+   "language"
+  ]
+ },
+ {
+  "id": "rd07",
+  "question": "How many kitchen staff do I need next Saturday?",
+  "answer": "Next Saturday is **za 3 jun**. You need **4 kitchen staff**.\n\n- Forecast: 138 guests (likely range 129–147)\n- Kitchen rule: 1 per 35 guests, minimum 2\n\nIf you meant Sat 10 Jun, I can check that day too.\n\nGebaseerd op: staffing rules, forecast.",
+  "calls": [
+   {
+    "tool": "get_today_and_data_range",
+    "args": {}
+   },
+   {
+    "tool": "get_staffing",
+    "args": {
+     "date": "2017-06-03"
+    }
+   },
+   {
+    "tool": "get_forecast",
+    "args": {
+     "start_date": "2017-06-03",
+     "end_date": "2017-06-03"
+    }
+   }
+  ],
+  "still_fails": []
+ },
+ {
+  "id": "rd08",
+  "question": "Hoeveel gasten verwachten we volgende zaterdag?",
+  "answer": "Voor za 3 jun verwachten we 138 gasten (bereik 129-147).\n\n- Al geboekt: 135 gasten\n- Gebruikelijk voor een zaterdag: 136 gasten\n- Niet afwijkend ten opzichte van normaal (+2%)\n\nBedoel je za 3 jun of za 10 jun? Dan kijk ik ook.\n\nGebaseerd op: forecast.",
+  "calls": [
+   {
+    "tool": "get_today_and_data_range",
+    "args": {}
+   },
+   {
+    "tool": "get_forecast",
+    "args": {
+     "start_date": "2017-06-03",
+     "end_date": "2017-06-03"
+    }
+   }
+  ],
+  "still_fails": []
+ },
+ {
+  "id": "ta01",
+  "question": "How accurate has the forecast been so far?",
+  "answer": "The forecast has been clearly more accurate than using the usual number for each weekday.\n\n**Backtest (past 8 weeks), average error in guests:**\n- 1 day ahead: 5.1 (weekday average: 26.7), likely range ±6.2\n- 3 days ahead: 6.8 (weekday average: 26.7), likely range ±8.8\n- 7 days ahead: 7.9 (weekday average: 26.7), likely range ±11.7\n- 14 days ahead: 10.6 (weekday average: 26.5), likely range ±16.0\n\n**Last 14 days after the export:**\n- Average error: 8.9 guests (weekday average: 19.0)\n- 64% of days landed inside the likely range. The range is meant to contain about 8 in 10 days, so it was a bit narrow for that period.\n\nBased on: accuracy check.",
+  "calls": [
+   {
+    "tool": "get_accuracy",
+    "args": {}
+   }
+  ],
+  "still_fails": []
+ },
+ {
+  "id": "ta02",
+  "question": "How sure are you about the forecast for Saturday 17 June 2017?",
+  "answer": "**Sat 17 Jun: forecast 157 guests, likely range 141-173.**\n\n- 154 guests are already booked.\n- The usual for a Saturday is 136, so this day is flagged busy (+15.9%).\n- Confidence is moderate. The day is about two weeks out. In backtests at 14 days ahead, the average error was 10.6 guests, and the 80% range was ±16 guests. Weekday averages missed by about 26.5 guests, so the forecast is much better than a typical-Saturday guess.\n- Caution: over the 14 days after the export, only 64% of actual results landed inside the range, below the 80% target. Treat the range as a bit optimistic.\n\nBased on: forecast, accuracy check.",
+  "calls": [
+   {
+    "tool": "get_today_and_data_range",
+    "args": {}
+   },
+   {
+    "tool": "get_forecast",
+    "args": {
+     "start_date": "2017-06-17",
+     "end_date": "2017-06-17"
+    }
+   },
+   {
+    "tool": "get_accuracy",
+    "args": {}
+   }
+  ],
+  "still_fails": []
+ },
+ {
+  "id": "ta03",
+  "question": "How often does the real number of guests land inside the likely range?",
+  "answer": "Over the 14 days after the export, **64%** of actual guest numbers landed inside the likely range. The range is meant to cover about 80% of days, so it was somewhat narrower than intended in that period.\n\n- Average error over those 14 days: 8.9 guests (the weekday average was off by 19.0).\n- Typical error in the 8-week backtest: 5.1 guests at 1 day ahead, 7.9 at 7 days, and 10.6 at 14 days.\n\nThe backtest doesn't report how often the range held, only the average errors.\n\nBased on: accuracy check.",
+  "calls": [
+   {
+    "tool": "get_accuracy",
+    "args": {}
+   }
+  ],
+  "still_fails": []
+ }
+]
