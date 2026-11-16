@@ -145,6 +145,30 @@ def pick_reading(item: dict, result: RunResult) -> dict:
     return item
 
 
+def print_failures(records: list[dict]) -> None:
+    """Show every failed question in full, so a CI log alone is enough to judge whether the
+    model or the scorer was wrong (the results file is also uploaded as an artifact)."""
+    failed = [r for r in records if not r["passed"]]
+    if not failed:
+        return
+    print("\nFailed questions:")
+    for r in failed:
+        checks = [name for name, ok in r["scores"].items() if ok is False]
+        print(f"\n--- {r['id']} ({r['category']}, {r['lang']}) failed: {', '.join(checks) or r['stop_reason']}")
+        print(f"Q: {r['question']}")
+        print("A: " + (r["answer"] or "").replace("\n", "\n   "))
+        for c in r["tool_calls"]:
+            print(f"   tool {c['name']} {json.dumps(c['input'], ensure_ascii=False)}")
+        if r["ungrounded"]:
+            print(f"   not traced to a tool: {r['ungrounded']}")
+            for d in r.get("ungrounded_detail") or []:
+                print(f"     {d}")
+        if r.get("missing_numbers"):
+            print(f"   expected but missing: {r['missing_numbers']}")
+        if r.get("note"):
+            print(f"   note: {r['note']}")
+
+
 def run_one(item: dict, backend, answer_fn: Callable[..., RunResult], *, model: str,
             prompt: str, cost_fn: Callable, judge_client=None, judge_model: str | None = None) -> dict:
     started = time.perf_counter()
@@ -315,6 +339,7 @@ def main(argv: list[str] | None = None) -> int:
     print()
     print(format_summary(summary, config))
     print(f"\nSaved {out_path}")
+    print_failures(records)
 
     faith = summary["metrics"]["faithfulness"]["rate"]
     if faith is not None and faith < 1.0:
