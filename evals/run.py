@@ -1,6 +1,6 @@
 """Run the eval: every question through the real agent loop, scored, saved as JSON.
 
-    python -m evals.run                         # fake backend, haiku, prompt v1
+    python -m evals.run                         # fake backend, haiku, prompt v2
     python -m evals.run --backend real --sample 10   # 10 questions, spread over categories
     python -m evals.run --ids sd01 nl05 --judge
 
@@ -271,7 +271,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="python -m evals.run", description=__doc__.split("\n")[0])
     p.add_argument("--backend", choices=["fake", "real"], default="fake")
     p.add_argument("--model", default="claude-haiku-5-5")
-    p.add_argument("--prompt", default="v1", help="prompt version, prompts/<version>.md")
+    p.add_argument("--prompt", default="v2", help="prompt version, prompts/<version>.md")
     p.add_argument("--limit", type=int, default=None, help="only the first N questions")
     p.add_argument("--sample", type=int, default=None,
                    help="N questions spread over the categories (fixed seed)")

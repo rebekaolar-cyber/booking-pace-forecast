@@ -59,7 +59,7 @@ def test_full_run_with_perfect_stub(stub_agent, tmp_path, capsys):
     stub_agent(oracle_answer)
     code = run.main(["--backend", "fake", "--out", str(tmp_path)])
     assert code == 0
-    files = list(tmp_path.glob("*_claude-haiku-5-5_v1.json"))
+    files = list(tmp_path.glob("*_claude-haiku-5-5_v2.json"))
     assert len(files) == 1
     data = json.loads(files[0].read_text())
     s = data["summary"]

@@ -71,7 +71,7 @@ def test_direct_answer():
 def test_request_uses_prompt_tools_and_settings():
     _, client = run([response([text("ok")], "end_turn")], model="m-test", max_tokens=123)
     request = client.requests[0]
-    assert request["system"] == load_prompt("v1")
+    assert request["system"] == load_prompt("v2")  # the default prompt
     assert request["tools"] == TOOL_SCHEMAS
     assert request["model"] == "m-test"
     assert request["max_tokens"] == 123
@@ -315,3 +315,14 @@ def test_block_to_dict_uses_model_dump_for_sdk_objects():
 def test_block_to_dict_rejects_unknown_types():
     with pytest.raises(ValueError):
         block_to_dict(SimpleNamespace(type="image"))
+
+
+def test_prompt_v2_is_v1_plus_two_rules():
+    """v2 adds only two rules (exact percentages; answer in the question's language), so a
+    v1 -> v2 eval comparison isolates them."""
+    v1, v2 = load_prompt("v1").splitlines(), load_prompt("v2").splitlines()
+    added = [line for line in v2 if line not in v1]
+    assert [line for line in v1 if line not in v2] == []
+    assert len(added) == 2
+    assert "14.5% below" in added[0] and "never rounded" in added[0]
+    assert "language the question is written in" in added[1] and "English" in added[1]

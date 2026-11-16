@@ -17,6 +17,10 @@ on:
         description: "Model to evaluate"
         required: false
         default: "claude-haiku-5-5"
+      prompt:
+        description: "Prompt version to evaluate (prompts/<version>.md)"
+        required: false
+        default: "v2"
 
 permissions:
   contents: read
@@ -59,8 +63,9 @@ jobs:
           # Inputs go through env, not straight into the script, so they cannot inject shell code.
           EVAL_SAMPLE: ${{ inputs.sample || '10' }}
           EVAL_MODEL: ${{ inputs.model || 'claude-haiku-5-5' }}
+          EVAL_PROMPT: ${{ inputs.prompt || 'v2' }}
         run: |
-          python -m evals.run --backend real --sample "$EVAL_SAMPLE" --model "$EVAL_MODEL"
+          python -m evals.run --backend real --sample "$EVAL_SAMPLE" --model "$EVAL_MODEL" --prompt "$EVAL_PROMPT"
 
       - name: Upload eval results
         if: always() && steps.key.outputs.present == 'true'

@@ -551,3 +551,216 @@ def test_judge_parses_digit_without_api():
     assert scoring.judge(r, client, "judge-model") == 4
     assert client.calls[0]["model"] == "judge-model"
     assert scoring.judge(r, _Client("no idea"), "m") is None
+
+
+# --------------------------------------------------------------------------- first live eval
+# Real model answers from the first live eval in CI, with the tool outputs copied from
+# RealBackend (today Thu 2017-06-01). test_live_outputs_match_the_real_backend checks the copies.
+
+REAL_TODAY = {"today": "2017-06-01", "first_booking_date": "2015-07-01",
+              "last_booking_date": "2017-08-31",
+              "dataset": "City hotel sample (real bookings, export of 31 May 2017)",
+              "max_horizon_days": 28, "today_weekday": "Thursday", "last_forecast_date": "2017-06-28"}
+REAL_SAT17 = _day("2017-06-17", "Saturday", 154, 136, 157, 141, 173, 15.9, "busy")
+REAL_STAFF17 = {"date": "2017-06-17", "forecast_guests": 157, "staff": [
+    {"role": "floor", "count": 7, "rule": "1 per 25 guests (on the forecast), rounded up, minimum 2"},
+    {"role": "bar", "count": 3, "rule": "1 per 60 guests (on the forecast), rounded up, minimum 1"},
+    {"role": "kitchen", "count": 5, "rule": "1 per 35 guests (on the forecast), rounded up, minimum 2"}]}
+REAL_ACC_FULL = {
+    "backtest": {"weeks": 8, "description": (
+        "Replaying the 8 weeks before the export: for each past day the forecast is rebuilt from "
+        "the bookings known back then and compared with what really came, per number of days ahead."),
+        "by_days_ahead": [
+            {"days_ahead": 1, "mean_abs_error_guests": 5.1, "weekday_average_mean_abs_error_guests": 26.7,
+             "range_half_width_guests": 6.2},
+            {"days_ahead": 3, "mean_abs_error_guests": 6.8, "weekday_average_mean_abs_error_guests": 26.7,
+             "range_half_width_guests": 8.8},
+            {"days_ahead": 7, "mean_abs_error_guests": 7.9, "weekday_average_mean_abs_error_guests": 26.7,
+             "range_half_width_guests": 11.7},
+            {"days_ahead": 14, "mean_abs_error_guests": 10.6, "weekday_average_mean_abs_error_guests": 26.5,
+             "range_half_width_guests": 16.0}]},
+    "range_percentile": 80,
+    "range_meaning": "8 in 10 past days stayed within this distance of the forecast",
+    "after_export": {"description": "Known only because the sample is history: what really happened "
+                                    "on the next 14 days after the export.",
+                     "days_checked": 14, "inside_range_pct": 64, "mean_abs_error_guests": 8.9,
+                     "weekday_average_mean_abs_error_guests": 19.0}}
+REAL_22_25 = [_day("2017-06-22", "Thursday", 134, 153, 144, 128, 160, -6.0, None),
+              _day("2017-06-23", "Friday", 135, 173, 139, 123, 155, -19.8, "quiet"),
+              REAL_SAT24,
+              _day("2017-06-25", "Sunday", 185, 123, 184, 168, 200, 50.0, "busy")]
+
+_D17 = {"start_date": "2017-06-17", "end_date": "2017-06-17"}
+_D22_25 = {"start_date": "2017-06-22", "end_date": "2017-06-25"}
+LIVE_CALLS = {  # (tool, args) -> real output
+    ("get_today_and_data_range", ()): REAL_TODAY,
+    ("get_staffing", (("date", "2017-06-17"),)): REAL_STAFF17,
+    ("get_forecast", tuple(_D17.items())): {"days": [REAL_SAT17]},
+    ("get_accuracy", ()): REAL_ACC_FULL,
+    ("get_forecast", tuple(_D22_25.items())): {"days": REAL_22_25},
+}
+
+
+def live(question: str, answer: str, calls: list[tuple[str, dict]]) -> RunResult:
+    tool_calls = [ToolCall(n, a, LIVE_CALLS[(n, tuple(a.items()))], 0.0) for n, a in calls]
+    return RunResult(question=question, answer=answer, model="live", prompt_version="v1",
+                     tool_calls=tool_calls, stop_reason="answered")
+
+
+def test_live_outputs_match_the_real_backend():
+    pytest.importorskip("pace.plan")
+    from agent.real_backend import RealBackend
+    real = RealBackend()
+    for (name, args), output in LIVE_CALLS.items():
+        assert run_tool(real, name, dict(args)) == output, name
+
+
+ST08_Q = "How did you work out how many floor staff I need on 17 June 2017?"
+ST08_A = ("On Sat 17 Jun, the plan is **7 floor staff**. Here's how that was worked out:\n\n"
+          "- **Guest forecast:** 157 guests (likely range 141-173). Already booked: 154. This day is "
+          "flagged busy, about 16% above the usual Saturday.\n"
+          "- **Floor rule:** 1 floor staff per 25 forecast guests, rounded up, with a minimum of 2.\n\n"
+          "The rule applies to the 157 forecast, not the full range. I can't check the staffing at the "
+          "top or bottom of the range with the tools I have.\n\nBased on: staffing rules, forecast.")
+ST08_CALLS = [("get_today_and_data_range", {}), ("get_staffing", {"date": "2017-06-17"}),
+              ("get_forecast", _D17)]
+ST08_EXPECT = {"tools": ["get_staffing"],
+               "calls": [{"tool": "get_staffing", "args": {"date": "2017-06-17", "role": "floor"}}],
+               "numbers_from": ["count"]}
+
+
+def test_live_st08_all_roles_call_and_forecast_are_fine():
+    """st08 was a scorer false alarm: get_staffing without a role returns floor too, and a
+    staffing answer may call get_forecast for the range and the explanation."""
+    r = live(ST08_Q, ST08_A, ST08_CALLS)
+    assert scoring.tool_choice_ok(r, ST08_EXPECT)
+    assert scoring.args_ok(r, ST08_EXPECT)
+    assert scoring.faithfulness(r)["ok"], scoring.faithfulness(r)
+
+
+def test_staffing_without_role_matches_every_role_but_not_other_days_or_tools():
+    for role in ("floor", "bar", "kitchen"):
+        expect = {"tools": ["get_staffing"],
+                  "calls": [{"tool": "get_staffing", "args": {"date": SAT, "role": role}}]}
+        assert scoring.args_ok(make("q", "a", STAFF_SAT), expect)
+        assert scoring.tool_choice_ok(make("q", "a", STAFF_SAT + FC_SAT), expect)
+        assert not scoring.args_ok(make("q", "a", [("get_staffing", {"date": "2017-06-04"})]), expect)
+        assert not scoring.tool_choice_ok(make("q", "a", STAFF_SAT + ACC), expect)
+    # a forecast-only question still may not call get_staffing
+    fc_only = {"tools": ["get_forecast"], "calls": [{"tool": "get_forecast", "args": {
+        "start_date": SAT, "end_date": SAT}}]}
+    assert not scoring.tool_choice_ok(make("q", "a", FC_SAT + STAFF_SAT), fc_only)
+
+
+TA02_Q = "How sure are you about the forecast for Saturday 17 June 2017?"
+TA02_A = ("**Saturday 17 Jun: forecast 157 guests, likely range 141-173.** It's flagged busy, against "
+          "a usual Saturday of 136. So far 154 guests are booked.\n\nHow sure I am:\n"
+          "- **Accuracy:** At 14 days ahead, the typical error in past backtests was about 11 guests. "
+          "At 1 to 7 days it was 5 to 8. The 17th is 16 days away, so it falls just beyond the range "
+          "I tested.\n"
+          "- **Range reliability:** The range is meant to hold 8 in 10 days. In a later check on the "
+          "14 days after the export, only 64% landed inside it. Treat the range as a bit optimistic, "
+          "and expect the forecast to tighten as the date gets closer.\n\n"
+          "Based on: forecast, accuracy check.")
+TA02_CALLS = [("get_today_and_data_range", {}), ("get_accuracy", {}), ("get_forecast", _D17)]
+
+
+def test_live_ta02_accuracy_answer_is_grounded():
+    """ta02 was a scorer false alarm: ranges of undated accuracy values ("1 to 7", "5 to 8"),
+    the range definition as a rate ("meant to hold 8 in 10 days") and a day's distance."""
+    r = live(TA02_Q, TA02_A, TA02_CALLS)
+    assert scoring.faithfulness(r)["ok"], scoring.faithfulness(r)
+
+
+@pytest.mark.parametrize("label, answer, grounded", [
+    ("undated range in a dated clause", "Sat 17 Jun: at 1 to 7 days ahead the error was 5 to 8.", True),
+    ("undated range, wrong end", "Sat 17 Jun: at 1 to 7 days ahead the error was 5 to 12.", False),
+    ("8 in 10 definition", "Sat 17 Jun: the range is meant to hold 8 in 10 days.", True),
+    ("8 out of 10", "The likely range is built from 8 out of 10 past days.", True),
+    ("8 op de 10", "De marge is zo gekozen dat 8 op de 10 dagen erbinnen blijven.", True),
+    ("8 in 10 as what happened", "After the export the range held the real number on 8 in 10 days.",
+     False),
+    ("distance from today", "Sat 24 Jun is 23 days away.", True),
+    ("wrong distance", "Sat 24 Jun is 25 days away.", False),
+    ("distance of another day", "Sat 17 Jun is 23 days away.", False),
+])
+def test_live_ta02_rules(label, answer, grounded):
+    calls = TA02_CALLS + [("get_forecast", _D22_25)]
+    r = live(TA02_Q, answer, calls)
+    assert scoring.faithfulness(r)["ok"] is grounded, scoring.faithfulness(r)
+
+
+DR07_Q = "How do 22 to 25 June 2017 compare with what is usual for those weekdays?"
+DR07_CALLS = [("get_today_and_data_range", {}), ("get_forecast", _D22_25)]
+
+
+@pytest.mark.parametrize("line, grounded", [
+    # the real model mistake: -14.5 (not flagged) rounded to 15 sounds flagged
+    ("- **Sat 24 Jun:** forecast 116 (likely 100–132), usual 136, about 15% below.", False),
+    ("- **Sat 24 Jun:** forecast 116 (likely 100–132), usual 136, 14.5% below.", True),
+    ("- **Thu 22 Jun:** forecast 144 (likely 128–160), usual 153, about 6% below.", True),
+    ("- **Fri 23 Jun:** forecast 139 (likely 123–155), usual 173, about 20% below.", True),
+    ("- **Sun 25 Jun:** forecast 184 (likely 168–200), usual 123, about 50% above.", True),
+])
+def test_live_dr07_rounding_across_the_flag_is_caught(line, grounded):
+    r = live(DR07_Q, line, DR07_CALLS)
+    assert scoring.faithfulness(r)["ok"] is grounded, scoring.faithfulness(r)
+
+
+def test_live_dr07_whole_answer_fails_only_on_sat_24():
+    answer = "\n".join([
+        "Here is how 22 to 25 June compare with usual:",
+        "- **Thu 22 Jun:** forecast 144 (likely 128–160), usual 153, about 6% below.",
+        "- **Fri 23 Jun:** forecast 139 (likely 123–155), usual 173, about 20% below (flagged quiet).",
+        "- **Sat 24 Jun:** forecast 116 (likely 100–132), usual 136, about 15% below.",
+        "- **Sun 25 Jun:** forecast 184 (likely 168–200), usual 123, about 50% above (flagged busy).",
+        "", "Based on: forecast."])
+    f = scoring.faithfulness(live(DR07_Q, answer, DR07_CALLS))
+    assert f["ungrounded"] == [-15.0], f
+    assert f["detail"][0]["days"] == ["2017-06-24"]
+
+
+# --------------------------------------------------------------------------- full live run (v1)
+# One small case per rule that the 22 failures of the full v1 live run led to (the cases
+# themselves are in tests/test_live_eval_v1.py).
+
+LIVE_RULES = [  # (label, answer, calls, grounded?)
+    ("Dutch 'ten opzichte van' is not 10", "Za 3 jun: niet afwijkend ten opzichte van normaal (-4%).",
+     FC_SAT, True),
+    ("English 'ten' is still 10", "Sat 3 Jun: ten more guests than usual.", FC_SAT, False),
+    ("direction word on the next line is not this number's",
+     "**Busier:**\n- Sat 3 Jun: 113 guests, usual 118\n\n**Quieter:**\n- none", FC_SAT, True),
+    ("bullet dash is not a range joiner",
+     "- 1 day ahead: 5.1, range ±6.2\n- 3 days ahead: 6.8, range ±8.8",
+     [_out("get_accuracy", REAL_ACC_FULL)], True),
+    ("'respectively' uses the days named before",
+     "- Sat 3 Jun: forecast 113\n- Sun 4 Jun: forecast 82\nBooked so far: 104 and 71 respectively.",
+     FC_WEEKEND, True),
+    ("'respectively' with a wrong number",
+     "- Sat 3 Jun: forecast 113\n- Sun 4 Jun: forecast 82\nBooked so far: 99 and 71 respectively.",
+     FC_WEEKEND, False),
+    ("'the 80% range'", "In backtests the 80% range was ±11.7 guests.", RACC, True),
+    ("'below the 80% target' next to a coverage claim",
+     "Only 64% landed inside the range, below the 80% target.", RACC, True),
+    ("nl: 'de beoogde 80%'", "Er viel 64% binnen de bandbreedte, minder dan de beoogde 80%.", RACC, True),
+    ("80% as what happened still fails", "80% of real numbers landed inside the range.", RACC, False),
+    ("weeks away = distance / 7", "Sat 17 Jun is about two weeks out.",
+     [_out("get_today_and_data_range", REAL_TODAY), _out("get_forecast", {"days": [REAL_SAT17]})], True),
+    ("wrong weeks away", "Sat 17 Jun is about five weeks out.",
+     [_out("get_today_and_data_range", REAL_TODAY), _out("get_forecast", {"days": [REAL_SAT17]})], False),
+]
+
+
+@pytest.mark.parametrize("label, answer, calls, grounded", LIVE_RULES, ids=[c[0] for c in LIVE_RULES])
+def test_full_live_run_rules(label, answer, calls, grounded):
+    r = make_any(answer, calls)
+    assert scoring.faithfulness(r)["ok"] is grounded, scoring.faithfulness(r)
+
+
+def test_dutch_decline_with_words_between_kan_and_geen():
+    expect = {"must_refuse": True}
+    r = make("Hoeveel gasten verwachten we op 15 juli 2017?",
+             "Ik kan voor za 15 jul 2017 geen gastenaantal geven. Mijn voorspelling reikt tot 28 jun.",
+             TODAY)
+    assert scoring.refusal_ok(r, expect, "nl")
+    assert not scoring.refusal_ok(make("q", "Ik kan je helpen: za 15 jul wordt druk.", TODAY), expect, "nl")

@@ -26,7 +26,23 @@ Special cases, each with its own small rule:
   15%", "15% or more", "the 15% flag", "drempel"), never as a day's own change. Rounding may
   not move a day across it: -14.5% may be written "14.5%" but not "15% quieter".
 * The range percentile (80, "8 in 10 past days stayed within") is how the range is built, not
-  how often it held. It grounds a number only in a clause that defines the range.
+  how often it held. It grounds a number only in a clause that defines the range ("stayed
+  within", "percentile", or intent such as "is meant to hold"). Written as a rate ("8 in 10",
+  "8 out of 10", "8 op de 10") it is the tool's own wording of the definition, so it counts
+  unless the clause claims it is what really happened ("held the real number on 8 in 10 days").
+* Undated values (accuracy, today info, rule text) are in every clause's pool, also as the two
+  ends of a range ("at 1 to 7 days ahead the error was 5 to 8").
+* "N days away / from now / ahead" may be the distance from today to a day the clause names
+  ("the 17th is 16 days away" when today is the 1st): a date difference the reader can check.
+  "N weeks out" may be that distance / 7, rounded.
+* The percentile named as the range's target ("the 80% range", "below the 80% target", "de
+  beoogde 80%") is allowed in any clause.
+* A "respectively" clause that names no day uses every day the answer named before it.
+* Reading the text: a direction word (below, busier) belongs to the nearest number before it on
+  the same line; a dash across a line break is a bullet, not a range; Dutch "ten opzichte van"
+  is not the number 10.
+* Tool use: get_staffing without a role returns every role, so it matches an expected call for
+  one role; a staffing question may also call get_forecast (it gives the likely range).
 * "N days" in a clause about flags/busy/quiet days must be a count the tools returned (all
   flagged, busy or quiet days) or the number of days the answer itself lists.
 * Totals and averages are computed only over days the sentence names. In a loose "on average"
@@ -99,6 +115,10 @@ _NUMBER_WORDS = {
     "veertien": 14, "vijftien": 15, "zestien": 16, "zeventien": 17, "achttien": 18,
     "negentien": 19, "twintig": 20,
 }
+# Dutch fixed phrases that start with "ten" ("ten opzichte van" = compared with): not the number 10.
+_DUTCH_TEN = {"opzichte", "minste", "hoogste", "eerste", "tweede", "laatste", "slotte", "behoeve",
+              "gevolge", "koste", "aanzien", "onrechte", "dele", "tijde", "einde", "zuiden",
+              "noorden", "oosten", "westen"}
 _NOT_A_COUNT_BEFORE_ONE = {"the", "this", "that", "which", "no", "any", "every", "each", "a",
                            "an", "someone", "anyone", "everyone"}
 
@@ -115,6 +135,9 @@ _UP_WORDS = {"busier", "more", "extra", "higher", "above", "up", "increase", "dr
              "hoger", "boven", "plus", "stijging"}
 _DOWN_WORDS = {"quieter", "fewer", "less", "lower", "below", "under", "down", "decrease",
                "drop", "rustiger", "minder", "lager", "onder", "daling"}
+# "Bookings so far are 134, 135, 106 and 185 respectively": the numbers belong to the days
+# named before, in order, so such a clause (if it names no day itself) uses all of them.
+_RESPECTIVELY = re.compile(r"\brespective(?:ly)?\b|\brespectievelijk\b", re.I)
 _TOTAL_RE = re.compile(r"\b(?:total|totaal|in all|altogether|combined|samen|opgeteld|sum)\b", re.I)
 _AVERAGE_RE = re.compile(r"\b(?:average|avg|mean|gemiddeld\w*)\b", re.I)
 
@@ -147,6 +170,24 @@ _DEFINITION_TEXT = re.compile(r"percentil|stayed within|stay within|stays within
 _COVERAGE_TEXT = re.compile(r"\bheld\b|\bholds?\b|\bland(?:ed|s)?\b|\blag(?:en)? binnen|"
                             r"real number|actual|echte|werkelijk|klopte|was right|"
                             r"\binside\b|\bfell\b|\bfalls?\b|covered|coverage", re.I)
+# Words of intent make a clause a definition even when it says "hold": "the range is meant to
+# hold 8 in 10 days" says what the range aims for, not what happened afterwards.
+_INTENT_TEXT = re.compile(r"\bmeant to\b|\bdesigned to\b|\bsupposed to\b|\bintended to\b|"
+                          r"\baims? to\b|\bshould\b|\bbedoeld\b|\bzou moeten\b|\bhoort te\b", re.I)
+
+# "16 days away": how far a day the clause names is from today (a date difference the reader
+# can check, so it is allowed when it is exactly that distance).
+_DISTANCE_AFTER = re.compile(r"^\s*(?:days?|dagen|dag)\s+(?:away|from now|from today|"
+                             r"ahead|out|weg|verwijderd|vanaf vandaag|van nu)\b", re.I)
+_WEEKS_AFTER = re.compile(r"^\s*(?:weeks?|weken)\s+(?:away|from now|from today|ahead|out|weg|"
+                          r"verwijderd|vooruit)\b", re.I)  # "about two weeks out": distance / 7
+
+# "the 80% range", "the 80% target", "de beoogde 80%": the percentile named as what it is (the
+# range's target), so it may stand in any clause, also next to a coverage claim.
+_PERCENTILE_NAME_AFTER = re.compile(r"^\s*(?:%|per ?cent|procent)?\s*(?:likely\s+)?(?:range|target|"
+                                    r"bandbreedte|marge|doel)\b", re.I)
+_PERCENTILE_NAME_BEFORE = re.compile(r"(?:target(?:\s+of)?|aim(?:ed)?(?:\s+at)?|intended|beoogde?|"
+                                     r"streven|doel(?:\s+van)?)\s*$", re.I)
 
 # Counts of days in a clause about flags ("3 busy days", "12 days are flagged").
 _DAYS_AFTER = re.compile(r"^\s*(?:[^\W\d_]+\s+){0,2}?(?:days?|dagen|dag)\b", re.I)
@@ -232,6 +273,7 @@ class _Sources:
     pairs: dict[dt.date, list[tuple[float, float]]] = field(default_factory=dict)
     undated: list[_Value] = field(default_factory=list)
     definition: list[float] = field(default_factory=list)  # range percentile: see _DEFINITION_KEY
+    percentile: list[float] = field(default_factory=list)  # range_percentile itself (80)
     flag_counts: dict[str, set[float]] = field(default_factory=dict)  # "busy" -> {3, 8}
     forecast_values: list[float] = field(default_factory=list)  # leaves of forecast/staffing records
     today: dt.date | None = None
@@ -280,6 +322,7 @@ def _walk(value: Any, key: str, day: dt.date | None, role: str | None, tool: str
     if isinstance(value, (int, float)):
         if key == _DEFINITION_KEY:
             src.definition.append(float(value))
+            src.percentile.append(float(value))
         elif "threshold" in key:
             pass  # the 15% threshold is only allowed in context, see _threshold_ok
         elif day is None:
@@ -569,6 +612,8 @@ class _Scanner:
             if not self._free(m.start(), m.end()):
                 continue
             w = m[1].lower()
+            if w == "ten" and _word_after(t, m.end()) in _DUTCH_TEN:
+                continue
             if w == "one" and (set(_words_before(t, m.start(), 1)) & _NOT_A_COUNT_BEFORE_ONE
                                or _word_after(t, m.end()) in {"of", "another"}):
                 continue
@@ -583,7 +628,11 @@ class _Scanner:
         if p:
             n.after = "%"
         if not sign:
-            following = re.findall(r"[^\W\d_]+", t[after_pos:after_pos + 30].lower())
+            # A direction word belongs to the nearest number before it: in "usual 136, 14.5%
+            # below" the "below" is the 14.5's, not the 136's. So look only up to the next digit,
+            # and not past the end of the line (a "**Quieter:**" heading on the next line).
+            ahead = re.split(r"\d|\n", t[after_pos:after_pos + 30], maxsplit=1)[0]
+            following = re.findall(r"[^\W\d_]+", ahead.lower())
             look = following[:2] if p else following[:1]
             before = _words_before(t, start, 2) if p else []
             if any(w in _UP_WORDS for w in look) or "up" in before:
@@ -604,6 +653,10 @@ class _Scanner:
             if i + 1 < len(nums):
                 b = nums[i + 1]
                 sep = t[a.end:b.digits]
+                if "\n" in sep:  # "±6.2\n- 3 days ahead": a list bullet, not a range joiner
+                    items.append(_Item("single", [a]))
+                    i += 1
+                    continue
                 between = re.search(r"\b(?:between|tussen)\s*$", t[:a.start], re.I)
                 if re.fullmatch(rf"\s*{_RANGE_JOIN}\s*", sep, re.I) or (
                         between and re.fullmatch(r"\s*(?:and|en|&)\s*", sep, re.I)):
@@ -694,11 +747,16 @@ class _Pool:
     values: list[_Value]          # signed values from the clause's records + undated values
     question: list[float]         # unsigned numbers from the question
     pairs: list[tuple[float, float]]
-    by_key: dict[str, list[tuple[dt.date, float]]]
+    # key -> [(where, value)]: where is the record's day, or ("undated", i) for undated values,
+    # so a range "1 to 7 days ahead" may use two values of one undated key.
+    by_key: dict[str, list[tuple[Any, float]]]
     text: str = ""                # the whole answer (to look around a number)
     clause: str = ""              # the piece of the answer the number is in
     definition: list[float] = field(default_factory=list)  # range percentile, if allowed here
+    rate_definition: list[float] = field(default_factory=list)  # same, for "8 in 10" rates
+    percentile: list[float] = field(default_factory=list)       # 80, when named "the 80% range"
     day_counts: set[float] = field(default_factory=set)    # allowed "N days" in a flag clause
+    distances: set[float] = field(default_factory=set)     # days from today to the clause's days
 
 
 def _roles_in(text: str, known: set[str]) -> set[str]:
@@ -728,11 +786,15 @@ def _pool(src: _Sources, days: set[dt.date] | None, all_days: set[dt.date] | Non
         # "On average 141 guests a day" with no day named: one day's own forecast is not an
         # average, so only the usual-for-weekday values (and undated accuracy values) count.
         vals = [(d, v) for d, v in vals if "usual" in v.key]
-    values =[v for _, v in vals] + src.undated
-    by_key: dict[str, list[tuple[dt.date, float]]] = {}
+    # Undated values (accuracy, today info, rule text, range_meaning) are in every clause's
+    # pool, whatever day the clause talks about.
+    values = [v for _, v in vals] + src.undated
+    by_key: dict[str, list[tuple[Any, float]]] = {}
     for d, v in vals:
         if v.key != "derived":
             by_key.setdefault(v.key, []).append((d, v.value))
+    for i, v in enumerate(src.undated):
+        by_key.setdefault(v.key, []).append((("undated", i), v.value))
     # Totals and averages are only computed over days the sentence names: over "the next two
     # weeks" (loose) we cannot know which days the answer averaged, so such a number fails.
     if all_days is not None and (_TOTAL_RE.search(clause) or _AVERAGE_RE.search(clause)):
@@ -747,10 +809,19 @@ def _pool(src: _Sources, days: set[dt.date] | None, all_days: set[dt.date] | Non
                     values.append(_Value(sum(x for dd, x in dv if dd == day), key))
             if _AVERAGE_RE.search(clause):  # "97.5 guests on average"
                 values.append(_Value(sum(x for _, x in dv) / len(dv), key))
-    pairs = [p for d in (set(src.records) if days is None else days) for p in src.pairs.get(d, [])]
-    definition = src.definition if (_DEFINITION_TEXT.search(clause)
-                                    and not _COVERAGE_TEXT.search(clause)) else []
-    return _Pool(values, question, pairs, by_key, clause=clause, definition=definition)
+    named = set(src.records) if days is None else days
+    pairs = [p for d in named for p in src.pairs.get(d, [])]
+    intent = bool(_INTENT_TEXT.search(clause))
+    coverage_claim = bool(_COVERAGE_TEXT.search(clause)) and not intent
+    defines = bool(_DEFINITION_TEXT.search(clause)) or intent
+    # The percentile may be written as "80%" only in a clause that defines the range. A rate
+    # like "8 in 10" / "8 out of 10" / "8 op de 10" is the tool's own wording of the definition
+    # (range_meaning), so it counts unless the clause claims it is what really happened.
+    definition = src.definition if defines and not coverage_claim else []
+    rate_definition = [] if coverage_claim else src.definition
+    distances = {float((d - src.today).days) for d in named} if src.today else set()
+    return _Pool(values, question, pairs, by_key, clause=clause, definition=definition,
+                 rate_definition=rate_definition, distances=distances, percentile=src.percentile)
 
 
 def _threshold_ok(n: _Num, pool: _Pool) -> bool:
@@ -785,6 +856,15 @@ def _is_day_count(n: _Num, pool: _Pool) -> bool:
 def _single_ok(n: _Num, pool: _Pool) -> bool:
     if n.always or _threshold_ok(n, pool) or any(value_matches(n.value, q) for q in pool.question):
         return True
+    if not n.pct and n.value in pool.distances and _DISTANCE_AFTER.match(pool.text[n.end:n.end + 30]):
+        return True  # "The 17th is 16 days away": exactly the day's distance from today
+    if not n.pct and _WEEKS_AFTER.match(pool.text[n.end:n.end + 30]) \
+            and any(n.value == _round_half_up(d / 7, 0) for d in pool.distances):
+        return True  # "about two weeks out" for a day 16 days away
+    if n.pct and n.value in pool.percentile and (
+            _PERCENTILE_NAME_AFTER.match(pool.text[n.end:n.end + 30])
+            or _PERCENTILE_NAME_BEFORE.search(pool.text[max(0, n.start - 25):n.start])):
+        return True  # "the 80% range", "below the 80% target", "de beoogde 80%"
     if _is_day_count(n, pool):  # must be a count the tools returned, or the days listed
         return any(value_matches(n.value, c) for c in pool.day_counts)
     if any(value_matches(n.value, d) for d in pool.definition):
@@ -804,7 +884,10 @@ def _item_ok(item: _Item, pool: _Pool) -> bool:
     a, b = item.nums
     if item.kind == "fraction":  # "4 out of 5 times" = 80%, "1 in 5 falls outside" = 100 - 80
         share = a.value / b.value * 100
-        pcts = [abs(v.value) for v in pool.values if _is_pct_key(v.key)] + pool.definition
+        # A rate is compared with rates (inside_range_pct, the range definition), never with
+        # one day's change vs usual: "8 in 10" is not -19.8% rounded.
+        pcts = [abs(v.value) for v in pool.values if _is_pct_key(v.key) and not v.dated]
+        pcts += pool.rate_definition
         if any(value_matches(share, p) or value_matches(100 - share, p) for p in pcts):
             return True
         # "x in 10", "x out of 5": a rate, so only its share counts. Otherwise ("3 of the 12
@@ -813,7 +896,8 @@ def _item_ok(item: _Item, pool: _Pool) -> bool:
             return False
         return _single_ok(a, pool) and _single_ok(b, pool)
     # range: a low/high pair of one record, the lowest/highest of one field over different
-    # days, or two numbers from the question.
+    # days (or two values of one undated field: "at 1 to 7 days ahead it was 5 to 8"), or two
+    # numbers from the question.
     if any(value_matches(a.value, lo) and value_matches(b.value, hi) for lo, hi in pool.pairs):
         return True
     if all(any(value_matches(n.value, q) for q in pool.question) for n in (a, b)):
@@ -851,6 +935,13 @@ def _resolve_units(units, src: _Sources) -> list[tuple[int, int, int, set[dt.dat
     return out
 
 
+def _respectively_days(text: str, start: int, end: int, sc: _Scanner) -> set[dt.date] | None:
+    """For a "respectively" clause that names no day: every day the answer named before it."""
+    if not _RESPECTIVELY.search(text[start:end]) or any(start <= m.start < end for m in sc.dates):
+        return None
+    return {d for m in sc.dates if not m.weak and m.start < start for d in m.dates} or None
+
+
 def faithfulness(result: RunResult) -> dict:
     """{"ungrounded": [numbers not backed by the tools for the day they talk about],
     "ok": bool, "loose": bool, "detail": [{"number", "clause", "days"}]}
@@ -863,6 +954,7 @@ def faithfulness(result: RunResult) -> dict:
     text = result.answer or ""
     sc = _Scanner(text, ctx)
     units = _resolve_units(_units(text, sc), src)
+    units = [(s, e, c, _respectively_days(text, s, e, sc) or days) for s, e, c, days in units]
     sentence_days: dict[int, set[dt.date] | None] = {}
     for _, _, clause, days in units:
         known = sentence_days.get(clause, set())
@@ -902,16 +994,25 @@ _ARG_KEYS = ("date", "start_date", "end_date", "role")
 _RANGE_TOOLS = {"get_forecast", "get_flagged_days"}
 # get_forecast returns the busy/quiet flag of every day, so it also answers a flagged-days call.
 _ALSO_ANSWERS = {"get_flagged_days": {"get_forecast"}}
+# get_staffing gives the guest forecast but not its likely range, and the prompt asks for the
+# range (and a "how did you work it out" answer explains the forecast), so a staffing question
+# may also call get_forecast.
+_ALSO_ALLOWED = {"get_staffing": {"get_forecast"}}
+# get_staffing without a role returns every role, so it answers a call for one role too.
+_ALL_ROLES_TOOLS = {"get_staffing"}
 
 
 def tool_choice_ok(result: RunResult, expect: dict) -> bool:
     """All required tools were called (``tools``, plus one complete option of ``tools_any_of``),
-    and nothing outside those + allowed_tools + get_today_and_data_range."""
+    and nothing outside those + allowed_tools + get_today_and_data_range (+ get_forecast when
+    get_staffing is required: see _ALSO_ALLOWED)."""
     called = {c.name for c in result.tool_calls}
     required = set(expect.get("tools") or [])
     options = [set(o) for o in expect.get("tools_any_of") or []]
     allowed = required | set(expect.get("allowed_tools") or []) | FREE_TOOLS
     allowed |= set().union(*options) if options else set()
+    for tool in required:
+        allowed |= _ALSO_ALLOWED.get(tool, set())
     if not required <= called:
         return False
     if options and not any(o <= called for o in options):
@@ -936,6 +1037,8 @@ def _call_matches(expected: dict, actual_name: str, actual_args: dict | None) ->
     want, got = _norm_args(expected.get("args")), _norm_args(actual_args)
     if want["role"] is None:  # no role asked: one call per role is fine too
         got["role"] = None
+    if got["role"] is None and actual_name in _ALL_ROLES_TOOLS:  # all roles include the one asked
+        want["role"] = None
     if actual_name in _RANGE_TOOLS and want["start_date"] and got["start_date"] and got["end_date"]:
         # ISO strings compare correctly as text; a wider range that covers the asked days is fine.
         return got["start_date"] <= want["start_date"] and got["end_date"] >= want["end_date"]
@@ -945,7 +1048,8 @@ def _call_matches(expected: dict, actual_name: str, actual_args: dict | None) ->
 def args_ok(result: RunResult, expect: dict) -> bool:
     """Every reference call in expect["calls"] was made by the assistant with the same
     date/role arguments (for range tools, a range covering the expected one also counts;
-    a reference call without a role is matched by calls with any role)."""
+    a reference call without a role is matched by calls with any role, and a get_staffing
+    call without a role matches a reference call for one role, since it returns all roles)."""
     for expected in expect.get("calls") or []:
         if not any(_call_matches(expected, c.name, c.input) for c in result.tool_calls):
             return False
@@ -1031,7 +1135,7 @@ _DECLINE = {
           r"do not have|doesn't have|does not have|\bno (?:access|data|information)\b|"
           r"not available|isn't available|not possible|\bsorry\b|unfortunately|out of scope|"
           r"outside (?:the|my|what)|beyond|not something i|only (?:looks?|goes|reaches) ",
-    "nl": r"kan (?:ik )?niet|kan ik geen|kan geen|kan alleen|kun je niet|niet mogelijk|"
+    "nl": r"\bkan\b[^.!?\n]{0,40}?\b(?:niet|geen)\b|kan (?:ik )?niet|kan ik geen|kan geen|kan alleen|kun je niet|niet mogelijk|"
           r"niet beschikbaar|\bhelaas\b|\bsorry\b|geen (?:toegang|gegevens|data|informatie)|"
           r"heb (?:ik )?geen|valt buiten|buiten (?:de|het|mijn)|verder dan|niet in staat|"
           r"alleen vooruit",

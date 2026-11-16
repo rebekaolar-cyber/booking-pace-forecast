@@ -63,7 +63,7 @@ def history_messages(history: list[dict] | None) -> list[dict]:
 
 
 def answer(question: str, backend, client=None, model: str = "claude-haiku-5-5",
-           prompt_version: str = "v1", history: list[dict] | None = None,
+           prompt_version: str = "v2", history: list[dict] | None = None,
            max_rounds: int = 6, max_tool_calls: int = 12,
            max_tokens: int = 700) -> RunResult:
     """Answer one question with the forecast tools. Never raises: problems become an
