@@ -7,6 +7,7 @@ repeat until it answers.
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ MAX_HISTORY_TURNS = 4  # earlier question/answer pairs sent along, so "and Sunda
 
 TOO_MANY_STEPS = ("Sorry, that question needed too many steps for me to answer reliably. "
                   "Could you ask it in a simpler or narrower way, for example one day at a time?")
+NO_API_KEY = "The assistant isn't set up yet: no Anthropic API key was found."
 API_PROBLEM = "Sorry, I couldn't reach the AI service just now. Please try again in a moment."
 INTERNAL_PROBLEM = ("Sorry, something went wrong inside the assistant (an internal error, "
                     "not the AI service). The problem has been logged.")
@@ -79,6 +81,12 @@ def answer(question: str, backend, client=None, model: str = "claude-haiku-5-5",
 
     try:
         if client is None:
+            if not os.environ.get("ANTHROPIC_API_KEY"):
+                # The SDK only notices a missing key at the first request, with a TypeError
+                # that would look like a bug in our code; say what's really wrong instead.
+                result.answer, result.stop_reason = NO_API_KEY, "error"
+                result.error = "ANTHROPIC_API_KEY is not set"
+                return result
             client = anthropic.Anthropic()
 
         for round_no in range(1, max_rounds + 1):
@@ -104,7 +112,8 @@ def answer(question: str, backend, client=None, model: str = "claude-haiku-5-5",
             messages.append({"role": "user",
                              "content": _run_tools(backend, tool_uses, result, max_tool_calls)})
 
-    except (anthropic.APIError, ConnectionError, TimeoutError) as exc:  # the API or network
+    # AnthropicError covers API errors and set-up problems such as a missing API key.
+    except (anthropic.AnthropicError, ConnectionError, TimeoutError) as exc:  # API, key or network
         result.answer = API_PROBLEM
         result.stop_reason = "error"
         result.error = str(exc)
