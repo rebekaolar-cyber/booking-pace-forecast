@@ -1,0 +1,298 @@
+##[group]Run python -m evals.run --backend real --sample "$EVAL_SAMPLE" --model "$EVAL_MODEL" --prompt "$EVAL_PROMPT"
+[36;1mpython -m evals.run --backend real --sample "$EVAL_SAMPLE" --model "$EVAL_MODEL" --prompt "$EVAL_PROMPT"[0m
+shell: /usr/bin/bash -e {0}
+env:
+  pythonLocation: /opt/hostedtoolcache/Python/3.13.18/x64
+  PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.13.18/x64/lib/pkgconfig
+  Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.18/x64
+  Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.18/x64
+  Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.18/x64
+  LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.13.18/x64/lib
+  ANTHROPIC_API_KEY: ***
+  EVAL_SAMPLE: 50
+  EVAL_MODEL: claude-haiku-5-5
+  EVAL_PROMPT: v1
+##[endgroup]
+[1/50] PASS sd01
+[2/50] PASS sd03
+[3/50] PASS sd04
+[4/50] PASS sd05
+[5/50] PASS sd06
+[6/50] PASS sd07
+[7/50] PASS sd09
+[8/50] PASS sd10
+[9/50] PASS dr01
+[10/50] FAIL dr02  failed: faithfulness
+[11/50] FAIL dr03  failed: faithfulness
+[12/50] PASS dr04
+[13/50] FAIL dr05  failed: faithfulness
+[14/50] PASS dr06
+[15/50] FAIL dr07  failed: faithfulness
+[16/50] PASS dr08
+[17/50] PASS st01
+[18/50] PASS st02
+[19/50] PASS st03
+[20/50] PASS st04
+[21/50] FAIL st05  failed: language
+[22/50] PASS st06
+[23/50] PASS st07
+[24/50] FAIL st08  failed: faithfulness
+[25/50] PASS nl01
+[26/50] PASS nl02
+[27/50] PASS nl03
+[28/50] PASS nl04
+[29/50] FAIL nl05  failed: faithfulness
+[30/50] PASS nl06
+[31/50] PASS nl07
+[32/50] PASS nl08
+[33/50] PASS oos01
+[34/50] PASS oos02
+[35/50] PASS oos03
+[36/50] PASS oos04
+[37/50] FAIL oos05  failed: tool_choice, refusal
+[38/50] PASS oos06
+[39/50] PASS oos07
+[40/50] PASS rd01
+[41/50] PASS rd02
+[42/50] PASS rd03
+[43/50] PASS rd04
+[44/50] PASS rd05
+[45/50] PASS rd06
+[46/50] FAIL rd07  failed: faithfulness
+[47/50] PASS rd08
+[48/50] FAIL ta01  failed: faithfulness
+[49/50] FAIL ta02  failed: faithfulness
+[50/50] FAIL ta03  failed: faithfulness
+
+Eval: claude-haiku-5-5 / prompt v1 / real backend / 50 questions
+  passed (all checks)  38/50  (76%)
+  faithfulness         40/50  (80%)
+  tool_choice          49/50  (98%)
+  args                 50/50  (100%)
+  refusal              7/8  (88%)
+  language             49/50  (98%)
+  numbers              36/36  (100%)
+  loose faithfulness   2 (answers that name no day; checked against every day)
+  errors               0
+  latency              p50 3.218 s, p95 5.546 s
+  mean tokens          6139.3 in, 514.7 out
+  cost                 $0.0436 total, $0.0871 per 100 questions
+
+Saved /home/runner/work/booking-pace-forecast/booking-pace-forecast/evals/results/20261116T192127Z_claude-haiku-5-5_v1.json
+
+Failed questions:
+
+--- dr02 (date_range, en) failed: faithfulness
+Q: Which days between 2017-06-02 and 2017-06-28 are flagged as unusually busy or quiet?
+A: **Busy days (8):**
+   - Mon 5 Jun: forecast 182 guests (likely 172-193), usual for a Monday is 136
+   - Sun 11 Jun: 149 (135-164), usual 123
+   - Mon 12 Jun: 165 (152-179), usual 136
+   - Sat 17 Jun: 157 (141-173), usual 136
+   - Tue 20 Jun: 163 (147-179), usual 117
+   - Sun 25 Jun: 184 (168-200), usual 123
+   - Tue 27 Jun: 144 (128-160), usual 117
+   - Wed 28 Jun: 190 (174-206), usual 127
+   
+   **Quiet days (4):**
+   - Wed 7 Jun: 107 (95-118), usual 127
+   - Sat 10 Jun: 74 (61-88), usual 136
+   - Fri 16 Jun: 132 (116-148), usual 173
+   - Fri 23 Jun: 139 (123-155), usual 173
+   
+   Based on: flagged days forecast.
+   tool get_today_and_data_range {}
+   tool get_flagged_days {"start_date": "2017-06-02", "end_date": "2017-06-28"}
+   not traced to a tool: [8.0, 4.0]
+     {'number': 8.0, 'clause': '**Busy days (8):**', 'days': 'all (loose)'}
+     {'number': 4.0, 'clause': '**Quiet days (4):**', 'days': ['2017-06-28']}
+
+--- dr03 (date_range, en) failed: faithfulness
+Q: What's the busiest day between 12 and 18 June 2017?
+A: The busiest day from 12 to 18 June is **Thu 15 Jun**, with a forecast of **170 guests** (likely range 154-186).
+   
+   Close behind is **Mon 12 Jun** at 165 guests (152-179). The ranges overlap, so these two are about equally busy.
+   
+   Based on: forecast.
+   tool get_today_and_data_range {}
+   tool get_forecast {"start_date": "2017-06-12", "end_date": "2017-06-18"}
+   not traced to a tool: [2.0]
+     {'number': 2.0, 'clause': 'The ranges overlap, so these two are about equally busy.', 'days': ['2017-06-12']}
+
+--- dr05 (date_range, en) failed: faithfulness
+Q: Are there any unusually quiet days from 19 to 25 June 2017?
+A: Yes, one quiet day from 19 to 25 June:
+   
+   - **Fri 23 Jun:** forecast 139 guests (likely range 123-155), against a usual 173 for a Friday.
+   
+   Mon 19, Wed 21, Thu 22 and Sat 24 are not flagged as quiet.
+   
+   Based on: flagged days forecast.
+   tool get_today_and_data_range {}
+   tool get_flagged_days {"start_date": "2017-06-19", "end_date": "2017-06-25"}
+   not traced to a tool: [19.0, 21.0, 22.0, 24.0]
+     {'number': 19.0, 'clause': 'Mon 19, Wed 21, Thu 22 and Sat 24 are not flagged as quiet.', 'days': ['2017-06-23']}
+     {'number': 21.0, 'clause': 'Mon 19, Wed 21, Thu 22 and Sat 24 are not flagged as quiet.', 'days': ['2017-06-23']}
+     {'number': 22.0, 'clause': 'Mon 19, Wed 21, Thu 22 and Sat 24 are not flagged as quiet.', 'days': ['2017-06-23']}
+     {'number': 24.0, 'clause': 'Mon 19, Wed 21, Thu 22 and Sat 24 are not flagged as quiet.', 'days': ['2017-06-23']}
+
+--- dr07 (date_range, en) failed: faithfulness
+Q: How do 22 to 25 June 2017 compare with what is usual for those weekdays?
+A: These dates are in the future (today is Thu 1 Jun 2017), so I can compare them with the forecast:
+   
+   - **Thu 22 Jun:** forecast 144 guests (128-160), usual 153. About 6% below usual.
+   - **Fri 23 Jun:** forecast 139 (123-155), usual 173. About 20% below usual, flagged **quiet**.
+   - **Sat 24 Jun:** forecast 116 (100-132), usual 136. About 15% below usual.
+   - **Sun 25 Jun:** forecast 184 (168-200), usual 123. About 50% above usual, flagged **busy**.
+   
+   Booked so far: Thu 134, Fri 135, Sat 106, Sun 185.
+   
+   Based on: forecast.
+   tool get_today_and_data_range {}
+   tool get_forecast {"start_date": "2017-06-22", "end_date": "2017-06-25"}
+   not traced to a tool: [-15.0]
+     {'number': -15.0, 'clause': 'About 15% below usual.', 'days': ['2017-06-24']}
+
+--- st05 (staffing, en) failed: language
+Q: What staffing do I need on 16 June 2017, and how many guests is that based on?
+A: **Fri 16 jun 2017**: forecast **132 gasten** (range 116–148). Die dag is rustig: ongeveer 23% minder dan gebruikelijk voor een vrijdag.
+   
+   **Benodigd personeel:**
+   - Floor: 6
+   - Bar: 3
+   - Kitchen: 4
+   
+   Gebaseerd op: staffing rules, forecast.
+   tool get_today_and_data_range {}
+   tool get_staffing {"date": "2017-06-16"}
+   tool get_forecast {"start_date": "2017-06-16", "end_date": "2017-06-16"}
+
+--- st08 (staffing, en) failed: faithfulness
+Q: How did you work out how many floor staff I need on 17 June 2017?
+A: Floor staff for **Sat 17 Jun** is **7**.
+   
+   - **Forecast guests:** 157 (likely range 141–173). The day is flagged busy, about 16% above the usual Saturday.
+   - **Rule:** 1 floor person per 25 guests on the forecast, rounded up, minimum 2.
+   - **Calculation:** 157 ÷ 25 = 6.28, rounded up to 7.
+   
+   If guest numbers come in at the top of the range, the rule would still give 7 floor staff, but I haven't calculated the staffing for the low or high end.
+   
+   Based on: staffing rules, forecast.
+   tool get_today_and_data_range {}
+   tool get_staffing {"date": "2017-06-17"}
+   tool get_forecast {"start_date": "2017-06-17", "end_date": "2017-06-17"}
+   not traced to a tool: [6.28]
+     {'number': 6.28, 'clause': '- **Calculation:** 157 ÷ 25 = 6.28, rounded up to 7.', 'days': ['2017-06-17']}
+
+--- nl05 (dutch, nl) failed: faithfulness
+Q: Hoe betrouwbaar is de voorspelling eigenlijk?
+A: De voorspelling is betrouwbaarder dan het gewone weekdaggemiddelde, maar wordt minder nauwkeurig naarmate de dag verder weg ligt.
+   
+   **Gemiddelde afwijking in gasten (terugtest, 8 weken):**
+   - 1 dag vooruit: 5,1 gasten (weekdaggemiddelde: 26,7)
+   - 3 dagen vooruit: 6,8 gasten
+   - 7 dagen vooruit: 7,9 gasten
+   - 14 dagen vooruit: 10,6 gasten
+   
+   **Bandbreedte:** 8 van de 10 dagen vielen binnen de genoemde bandbreedte: ±6 gasten bij 1 dag, ±9 bij 3 dagen, ±12 bij 7 dagen en ±16 bij 14 dagen.
+   
+   **Recente check:** Bij de 14 dagen na de export viel 64% binnen de bandbreedte (doel: 80%). De gemiddelde afwijking was 8,9 gasten, tegenover 19,0 voor het weekdaggemiddelde.
+   
+   Gebruik de voorspelling dus vooral voor de komende week, en houd voor verder vooruit een ruimere marge aan.
+   
+   Gebaseerd op: nauwkeurigheidscheck van de voorspelling.
+   tool get_accuracy {}
+   not traced to a tool: [80.0]
+     {'number': 80.0, 'clause': '**Recente check:** Bij de 14 dagen na de export viel 64% binnen de bandbreedte (doel: 80%).', 'days': []}
+
+--- oos05 (out_of_scope, en) failed: tool_choice, refusal
+Q: How busy will the Italian restaurant next door be on Saturday 3 June 2017?
+A: I can't forecast the Italian restaurant next door. I only have data for your own business.
+   
+   For your own hotel on **Sat 3 Jun**:
+   - Forecast: **138 guests** (likely range 129–147)
+   - Already booked: 135 guests
+   - Usual for a Saturday: 136 guests
+   - Not flagged as busy or quiet.
+   
+   Want me to check staffing for that day?
+   
+   Based on: forecast.
+   tool get_today_and_data_range {}
+   tool get_forecast {"start_date": "2017-06-03", "end_date": "2017-06-03"}
+   note: another business
+
+--- rd07 (relative_dates, en) failed: faithfulness
+Q: How many kitchen staff do I need next Saturday?
+A: Kitchen: **4 staff** on Sat 3 Jun.
+   
+   - Forecast: 138 guests (likely range 129-147)
+   - Rule: 1 per 35 guests, minimum 2
+   - If guests reach the high end (147), the same rule gives 5 kitchen staff.
+   
+   I took "next Saturday" as Sat 3 Jun. If you meant Sat 10 Jun, tell me and I'll check that day.
+   
+   Gebaseerd op: staffing rules, forecast.
+   tool get_today_and_data_range {}
+   tool get_staffing {"date": "2017-06-03"}
+   tool get_forecast {"start_date": "2017-06-03", "end_date": "2017-06-03"}
+   not traced to a tool: [5.0]
+     {'number': 5.0, 'clause': '- If guests reach the high end (147), the same rule gives 5 kitchen staff.', 'days': ['2017-06-03']}
+   note: Asked on Thursday 2017-06-01. "Next Saturday" can mean 2017-06-03 (two days away) or 2017-06-10; both readings are accepted (alt_calls), and the answer should say which date it used.
+
+--- ta01 (trust_accuracy, en) failed: faithfulness
+Q: How accurate has the forecast been so far?
+A: The forecast has been fairly accurate over the last 8 weeks of backtesting. The average error is about 5 guests one day ahead and about 11 guests two weeks ahead. The weekday average is off by about 27 guests, so the forecast is much closer.
+   
+   | Days ahead | Avg error (guests) | Likely range (± guests) |
+   |---|---|---|
+   | 1 | 5.1 | 6.2 |
+   | 3 | 6.8 | 8.8 |
+   | 7 | 7.9 | 11.7 |
+   | 14 | 10.6 | 16.0 |
+   
+   For the 14 days after the export, the actual numbers fell inside the likely range 64% of the time, against the 80% target. The average error was 8.9 guests, versus 19.0 for the weekday average. So the ranges ran a bit narrow in that period.
+   
+   Based on: accuracy check.
+   tool get_accuracy {}
+   not traced to a tool: [2.0]
+     {'number': 2.0, 'clause': 'The average error is about 5 guests one day ahead and about 11 guests two weeks ahead.', 'days': []}
+
+--- ta02 (trust_accuracy, en) failed: faithfulness
+Q: How sure are you about the forecast for Saturday 17 June 2017?
+A: **Forecast for Sat 17 Jun: 157 guests (likely range 141-173).** It's flagged busy, about 16% above the usual 136 for a Saturday. 154 guests are already booked.
+   
+   **How sure I am:**
+   - Forecasts are more reliable the closer the day is. In past tests, the average error was about 5 guests one day ahead and about 11 guests two weeks ahead.
+   - At two weeks ahead, the likely range was about ±16 guests. In past tests, 8 in 10 days landed inside it.
+   - Over the 14 days after the data export, 64% of actual days landed inside the range, below the target of 8 in 10. So the range may be a bit narrow, and treat the edges as possible rather than unlikely.
+   - The forecast will likely shift as more bookings come in. Check again closer to the date.
+   
+   Gebaseerd op: forecast, accuracy.
+   tool get_today_and_data_range {}
+   tool get_accuracy {}
+   tool get_forecast {"start_date": "2017-06-17", "end_date": "2017-06-17"}
+   not traced to a tool: [8.0, 10.0, 8.0, 10.0]
+     {'number': 8.0, 'clause': 'In past tests, 8 in 10 days landed inside it.', 'days': ['2017-06-17']}
+     {'number': 10.0, 'clause': 'In past tests, 8 in 10 days landed inside it.', 'days': ['2017-06-17']}
+     {'number': 8.0, 'clause': '- Over the 14 days after the data export, 64% of actual days landed inside the range, below the target of 8 in 10.', 'days': ['2017-06-17']}
+     {'number': 10.0, 'clause': '- Over the 14 days after the data export, 64% of actual days landed inside the range, below the target of 8 in 10.', 'days': ['2017-06-17']}
+
+--- ta03 (trust_accuracy, en) failed: faithfulness
+Q: How often does the real number of guests land inside the likely range?
+A: The likely range is meant to contain the real number about 8 times in 10. In the 14 days after the export, it held 64% of the time (the target is 80%), so the range was somewhat too narrow for that stretch.
+   
+   The forecast itself beat the weekday average on those days, with an average error of 8.9 guests against 19.0 for the weekday average.
+   
+   Backtest, average error by days ahead (likely-range half-width in brackets):
+   - 1 day: 5.1 guests (±6.2)
+   - 3 days: 6.8 guests (±8.8)
+   - 7 days: 7.9 guests (±11.7)
+   - 14 days: 10.6 guests (±16.0)
+   
+   Based on: accuracy check.
+   tool get_accuracy {}
+   not traced to a tool: [80.0]
+     {'number': 80.0, 'clause': 'In the 14 days after the export, it held 64% of the time (the target is 80%), so the range was somewhat too narrow for that stretch.', 'days': []}
+FAIL: invented numbers in dr02 [8.0, 4.0]; dr03 [2.0]; dr05 [19.0, 21.0, 22.0, 24.0]; dr07 [-15.0]; st08 [6.28]; nl05 [80.0]; rd07 [5.0]; ta01 [2.0]; ta02 [8.0, 10.0, 8.0, 10.0]; ta03 [80.0]
+##[error]Process completed with exit code 1.
