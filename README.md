@@ -10,7 +10,7 @@ forecast that reads the reservation book. On 119,390 real hotel bookings it make
 errors a week ahead than the usual weekday average, and it beats a gradient-boosting model up to
 7 days out.
 
-**▶ [Use it](#use-it-on-your-own-reservations)** · [Results](#results) · [How it works](#how-it-works) · [Run it yourself](#run-it-yourself)
+**▶ [Use it](#use-it-on-your-own-reservations)** · [Results](#results) · [How it works](#how-it-works) · [Ask the assistant](#ask-the-assistant) · [Run it yourself](#run-it-yourself)
 
 ![Planning the next two weeks](docs/demo.png)
 
@@ -124,16 +124,50 @@ see the booking curve behind the number.
 
 ![Looking inside one day](docs/demo-day.png)
 
+## Ask the assistant
+
+The third tab is a chat assistant for the manager: "How many bar staff do I need on Saturday?",
+"Any unusual days in the next two weeks?", "Wordt het druk aanstaande vrijdag?". It answers in
+English or Dutch from the sample hotel's forecast.
+
+- **It can't make numbers up.** The assistant is a plain tool-use loop on the Anthropic Messages
+  API, with no framework (`agent/loop.py`). It has five read-only tools over the same forecast
+  code as the Plan tab: `get_today_and_data_range`, `get_forecast`, `get_staffing`,
+  `get_flagged_days` and `get_accuracy`. Every answer has a "How I got this" box with the tools
+  it called, the time, the tokens and the cost.
+- **The same tools work in any MCP client.** `agent/mcp_server.py` serves them over the Model
+  Context Protocol, for Claude Desktop and others: [`docs/mcp.md`](docs/mcp.md).
+- **It is tested like software.** `evals/questions.yaml` holds 50 questions in seven groups:
+  single days, date ranges, staffing, Dutch, relative dates ("next Friday"), questions it should
+  refuse, and questions about how far to trust the forecast. The main score is number
+  faithfulness: every number in an answer must come from a tool result for the day the answer
+  is about. That check is plain code, not a second model (`evals/scoring.py`). Tool choice,
+  arguments, refusals and answer language are scored too.
+- **The live eval guards the main branch.** On every push to `main`, GitHub Actions runs the eval
+  with real model calls if an API key is set, and fails the build when any answer contains an
+  invented number.
+
+```bash
+pip install -r requirements-agent.txt
+python -m evals.run                               # demo data, default model and prompt
+python -m evals.run --backend real --sample 10    # the real forecast, 10 questions
+python -m evals.compare evals/results/A.json evals/results/B.json   # two runs side by side
+```
+
+The assistant needs `ANTHROPIC_API_KEY` (in `.streamlit/secrets.toml` or the environment). Without
+it the tab says so and switches its input off. The public demo stops at 10 questions per
+session and 200 per day.
+
 ## Run it yourself
 
 ```bash
 git clone https://github.com/rebekaolar-cyber/booking-pace-forecast
 cd booking-pace-forecast
-pip install -r requirements.txt pytest
+pip install -r requirements.txt -r requirements-agent.txt -r requirements-dev.txt
 
 PYTHONPATH=src python -m pace.backtest   # rebuilds reports/results.md (about 10 seconds)
 PYTHONPATH=src python -m pace.charts     # redraws the three charts
-python -m pytest                         # 27 tests
+python -m pytest                         # every test; none of them calls the AI service
 streamlit run streamlit_app.py           # the app
 ```
 
@@ -145,8 +179,15 @@ src/pace/
   backtest.py   replay Mar-Aug 2017 at 1-30 days ahead, write reports/
   charts.py     the README charts
   plan.py       read any reservations export, plan the next days, self-check, staffing
-tests/          book rebuilding, no-leakage checks, export reading, reproducible results
+agent/          the assistant: tool definitions, the tool-use loop, MCP server, run log
+evals/          50 questions, the scoring code, the runner and a results comparer
+prompts/        the assistant's instructions, one file per version
+tests/          book rebuilding, no-leakage checks, export reading, reproducible results,
+                the assistant loop, the eval scoring, the app itself
 streamlit_app.py
+app_pages/      assistant.py (the chat tab) and ui.py (the app's look: colours, header,
+                calendar of the days ahead, chart style)
+static/         the app's two fonts and its icon, served by the app itself
 ```
 
 ## Limits
@@ -172,7 +213,8 @@ Antonio, N., de Almeida, A. & Nunes, L. (2019). *Hotel booking demand datasets.*
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The authors removed all hotel and
 customer identifiers. `data/hotels.csv.gz` is the unmodified CSV, gzipped.
 
-Code: MIT licence.
+Code: MIT licence. Fonts: Bricolage Grotesque and Instrument Sans, both under the SIL Open Font
+License 1.1 (licence texts in `static/fonts/`).
 
 ---
 
