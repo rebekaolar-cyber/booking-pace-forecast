@@ -15,9 +15,6 @@ jobs:
           python-version: "3.13"
           cache: pip
       - run: pip install -r requirements.txt -r requirements-agent.txt -r requirements-dev.txt
-      - name: Tests (forecast incl. the full backtest, AI assistant, eval scoring; no API calls)
+      # Includes tests/test_app.py, which runs the whole app and fails on any exception.
+      - name: Tests (forecast incl. the full backtest, the app, AI assistant, eval scoring; no API calls)
         run: python -m pytest -q
-      - name: The demo app starts
-        run: |
-          timeout 90 streamlit run streamlit_app.py --server.headless true --server.port 8501 &
-          for i in $(seq 1 30); do curl -sf localhost:8501/_stcore/health && exit 0; sleep 2; done; exit 1

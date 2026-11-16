@@ -20,10 +20,38 @@ How it works (deterministic, no model involved):
 If the whole answer names no day and the run touched several days, every record is used and
 the result is marked ``loose`` so it is visible in the eval output.
 
+Special cases, each with its own small rule:
+
+* The flag threshold (15%) is allowed only where the text says it is the threshold ("at least
+  15%", "15% or more", "the 15% flag", "drempel"), never as a day's own change. Rounding may
+  not move a day across it: -14.5% may be written "14.5%" but not "15% quieter".
+* The range percentile (80, "8 in 10 past days stayed within") is how the range is built, not
+  how often it held. It grounds a number only in a clause that defines the range.
+* "N days" in a clause about flags/busy/quiet days must be a count the tools returned (all
+  flagged, busy or quiet days) or the number of days the answer itself lists.
+* Totals and averages are computed only over days the sentence names. In a loose "on average"
+  clause only usual-for-weekday values and undated accuracy values count.
+
 Every check returns a plain bool or a small dict, so a failing question can be explained by
 looking at its JSON record.
 """
 from __future__ import annotations
+
+KNOWN_LIMITS = """\
+Known limits of the number-faithfulness check (it is a deterministic text check, not a judge):
+- A loose clause (no day named, several days fetched) is checked against every day of the run,
+  so a number from the wrong day can pass there. Such answers are marked "loose".
+- A count of days is only checked when it is written as "N (busy/flagged/...) days" in a
+  clause about flags. "Of the 28 days, 3 are flagged" is not checked as a count.
+- Averages and totals are accepted when they are arithmetically right for the days the
+  sentence names; an average over unnamed days ("the next two weeks") is not computed and fails.
+- Numbers repeated from the question always pass, even when the answer uses them for another
+  meaning.
+- The range percentile (80) is told apart from a coverage claim by wording ("stayed within",
+  "percentile" vs "held", "landed", "inside"). Unusual wording can be misread either way.
+- Language detection counts common words; a very short answer with no day or month name can
+  still come out "unknown".
+"""
 
 import datetime as dt
 import re
@@ -98,9 +126,37 @@ _ROLE_STEMS = {
 }
 
 # Public facts from the tool descriptions the model always sees, allowed only in context.
+# (The 15% flag threshold has its own, stricter rule: see _threshold_ok.)
 _ALWAYS = [(float(MAX_HORIZON_DAYS), ("days", "day", "dagen", "dag")),
-           (float(FLAG_THRESHOLD_PCT), ("%",)),
            (float(MAX_HORIZON_DAYS // 7), ("weeks", "weken"))]
+
+# "15%" may be the flag threshold only where the text says so. Either the words right next to
+# the number say it ("at least 15%", "15% or more", "threshold of 15%"), or the number has no
+# busier/quieter direction and the clause is about the threshold ("just under the 15% flag").
+_THRESHOLD_BEFORE = re.compile(r"(?:at least|minstens|minimaal|ten minste|threshold|drempel|cut-?off|grens)\b[\w\s]{0,12}$", re.I)
+_THRESHOLD_AFTER = re.compile(r"^\s*(?:%|procent|percent)?\s*(?:or more|of meer|and up|en hoger)\b",
+                              re.I)
+_THRESHOLD_TOPIC = re.compile(r"threshold|drempel|\bflag|gemarkeerd|markering|\bgrens", re.I)
+
+# The likely range's percentile (80: "8 in 10 past days stayed within") says how the range is
+# BUILT. It is not how often the range held the real number afterwards, so it may only ground a
+# number in a clause that defines the range, never in a coverage claim ("held 80% of days").
+_DEFINITION_KEY = "range_percentile"
+_DEFINITION_TEXT = re.compile(r"percentil|stayed within|stay within|stays within|"
+                              r"bleven binnen|blijven binnen|binnen bleven", re.I)
+_COVERAGE_TEXT = re.compile(r"\bheld\b|\bholds?\b|\bland(?:ed|s)?\b|\blag(?:en)? binnen|"
+                            r"real number|actual|echte|werkelijk|klopte|was right|"
+                            r"\binside\b|\bfell\b|\bfalls?\b|covered|coverage", re.I)
+
+# Counts of days in a clause about flags ("3 busy days", "12 days are flagged").
+_DAYS_AFTER = re.compile(r"^\s*(?:[^\W\d_]+\s+){0,2}?(?:days?|dagen|dag)\b", re.I)
+_WINDOW_BEFORE = {"next", "coming", "komende", "volgende", "first", "eerste", "last", "laatste",
+                  "past", "afgelopen", "over", "within", "binnen", "in", "of", "van", "all", "alle"}
+_FLAG_TOPIC = {
+    "flagged": re.compile(r"\bflag|gemarkeerd|unusual|opvallend|afwijkend", re.I),
+    "busy": re.compile(r"\bbus(?:y|ier)\b|\bdruk(?:ke|ker)?\b", re.I),
+    "quiet": re.compile(r"\bquiet(?:er)?\b|\brustig(?:e|er)?\b", re.I),
+}
 
 # Pairs of fields whose difference an answer may state ("5 fewer than usual", "11 still to come",
 # "give or take 10").
@@ -167,6 +223,7 @@ class _Value:
     value: float
     key: str
     role: str | None = None
+    dated: bool = False
 
 
 @dataclass
@@ -174,6 +231,8 @@ class _Sources:
     records: dict[dt.date, list[_Value]] = field(default_factory=dict)
     pairs: dict[dt.date, list[tuple[float, float]]] = field(default_factory=dict)
     undated: list[_Value] = field(default_factory=list)
+    definition: list[float] = field(default_factory=list)  # range percentile: see _DEFINITION_KEY
+    flag_counts: dict[str, set[float]] = field(default_factory=dict)  # "busy" -> {3, 8}
     forecast_values: list[float] = field(default_factory=list)  # leaves of forecast/staffing records
     today: dt.date | None = None
     years: set[int] = field(default_factory=set)
@@ -188,15 +247,30 @@ class _Ctx:
 
 def _collect(result: RunResult) -> _Sources:
     src = _Sources()
+    flags_by_day: dict[dt.date, str | None] = {}
     for call in result.tool_calls:
         out = call.output
         if isinstance(out, dict) and _iso(out.get("today")):
             src.today = _iso(out["today"])
         _walk(out, "", None, None, call.name, src)
+        days = out.get("days") if isinstance(out, dict) else None
+        if isinstance(days, list):  # how many days each call flagged: "3 busy days"
+            flags = {_iso(d.get("date")): d.get("flag") for d in days if isinstance(d, dict)}
+            flags_by_day.update(flags)
+            _add_flag_counts(src, list(flags.values()))
+    if flags_by_day:  # and over all calls together
+        _add_flag_counts(src, list(flags_by_day.values()))
     src.years |= {d.year for d in src.records}
     if src.today:
         src.years.add(src.today.year)
     return src
+
+
+def _add_flag_counts(src: _Sources, flags: list[str | None]) -> None:
+    counts = {"flagged": sum(f is not None for f in flags),
+              "busy": sum(f == "busy" for f in flags), "quiet": sum(f == "quiet" for f in flags)}
+    for topic, n in counts.items():
+        src.flag_counts.setdefault(topic, set()).add(float(n))
 
 
 def _walk(value: Any, key: str, day: dt.date | None, role: str | None, tool: str,
@@ -204,10 +278,14 @@ def _walk(value: Any, key: str, day: dt.date | None, role: str | None, tool: str
     if isinstance(value, bool) or value is None:
         return
     if isinstance(value, (int, float)):
-        if day is None:
+        if key == _DEFINITION_KEY:
+            src.definition.append(float(value))
+        elif "threshold" in key:
+            pass  # the 15% threshold is only allowed in context, see _threshold_ok
+        elif day is None:
             src.undated.append(_Value(float(value), key))
         else:
-            src.records[day].append(_Value(float(value), key, role))
+            src.records[day].append(_Value(float(value), key, role, dated=True))
             if tool in _FORECAST_TOOLS:
                 src.forecast_values.append(float(value))
         return
@@ -215,6 +293,8 @@ def _walk(value: Any, key: str, day: dt.date | None, role: str | None, tool: str
         d = _iso(value)
         if d:
             src.years.add(d.year)
+        elif _DEFINITION_TEXT.search(value):  # "8 in 10 past days stayed within ..."
+            src.definition.extend(numbers_in(value))
         else:  # rule text, error messages: their numbers are undated facts
             src.undated.extend(_Value(n, key) for n in numbers_in(value))
         return
@@ -271,7 +351,8 @@ class _Num:
     sign: int = 0       # +1 / -1 when the text says so ("+4%", "4% busier", "5 fewer")
     pct: bool = False
     after: str = ""     # first word after the number (or "%")
-    always: bool = False  # 28 days / 15% / 4 weeks
+    always: bool = False  # 28 days / 4 weeks
+    threshold: bool = False  # "15%": may be the flag threshold, see _threshold_ok
 
 
 @dataclass
@@ -511,6 +592,7 @@ class _Scanner:
                 n.sign = -1
         n.always = any(abs(value - v) < 1e-9 and (n.after in ctx_words)
                        for v, ctx_words in _ALWAYS)
+        n.threshold = n.pct and abs(value - FLAG_THRESHOLD_PCT) < 1e-9
         return n
 
     def _pair(self, nums: list[_Num]) -> list[_Item]:
@@ -613,6 +695,10 @@ class _Pool:
     question: list[float]         # unsigned numbers from the question
     pairs: list[tuple[float, float]]
     by_key: dict[str, list[tuple[dt.date, float]]]
+    text: str = ""                # the whole answer (to look around a number)
+    clause: str = ""              # the piece of the answer the number is in
+    definition: list[float] = field(default_factory=list)  # range percentile, if allowed here
+    day_counts: set[float] = field(default_factory=set)    # allowed "N days" in a flag clause
 
 
 def _roles_in(text: str, known: set[str]) -> set[str]:
@@ -638,12 +724,18 @@ def _pool(src: _Sources, days: set[dt.date] | None, all_days: set[dt.date] | Non
     roles = _roles_in(clause, {v.role for _, v in vals if v.role})
     if roles:
         vals = [(d, v) for d, v in vals if v.role is None or v.role in roles]
-    values = [v for _, v in vals] + src.undated
+    if days is None and _AVERAGE_RE.search(clause):
+        # "On average 141 guests a day" with no day named: one day's own forecast is not an
+        # average, so only the usual-for-weekday values (and undated accuracy values) count.
+        vals = [(d, v) for d, v in vals if "usual" in v.key]
+    values =[v for _, v in vals] + src.undated
     by_key: dict[str, list[tuple[dt.date, float]]] = {}
     for d, v in vals:
         if v.key != "derived":
             by_key.setdefault(v.key, []).append((d, v.value))
-    if _TOTAL_RE.search(clause) or _AVERAGE_RE.search(clause):
+    # Totals and averages are only computed over days the sentence names: over "the next two
+    # weeks" (loose) we cannot know which days the answer averaged, so such a number fails.
+    if all_days is not None and (_TOTAL_RE.search(clause) or _AVERAGE_RE.search(clause)):
         groups: dict[str, list[tuple[dt.date, float]]] = {}
         for d, v in records(all_days):
             if v.key != "derived" and (not roles or v.role is None or v.role in roles):
@@ -656,17 +748,54 @@ def _pool(src: _Sources, days: set[dt.date] | None, all_days: set[dt.date] | Non
             if _AVERAGE_RE.search(clause):  # "97.5 guests on average"
                 values.append(_Value(sum(x for _, x in dv) / len(dv), key))
     pairs = [p for d in (set(src.records) if days is None else days) for p in src.pairs.get(d, [])]
-    return _Pool(values, question, pairs, by_key)
+    definition = src.definition if (_DEFINITION_TEXT.search(clause)
+                                    and not _COVERAGE_TEXT.search(clause)) else []
+    return _Pool(values, question, pairs, by_key, clause=clause, definition=definition)
+
+
+def _threshold_ok(n: _Num, pool: _Pool) -> bool:
+    """Is this "15%" the flag threshold (and not a day's own change)? See _THRESHOLD_BEFORE."""
+    if not n.threshold:
+        return False
+    before, after = pool.text[max(0, n.start - 30):n.start], pool.text[n.end:n.end + 20]
+    if _THRESHOLD_BEFORE.search(before) or _THRESHOLD_AFTER.match(after):
+        return True
+    return not n.sign and bool(_THRESHOLD_TOPIC.search(pool.clause))
+
+
+def _crosses_threshold(answer: float, source: _Value) -> bool:
+    """Rounding must not move a day across the flag threshold. -14.5% may be written as
+    "14.5% quieter" but not as "15% quieter": half-up rounding gives 15, which would make an
+    unflagged day look flagged (and 15.0 -> "14.9" would hide a flag the other way)."""
+    if not (source.dated and _is_pct_key(source.key)):
+        return False
+    return (abs(source.value) < FLAG_THRESHOLD_PCT) != (abs(answer) < FLAG_THRESHOLD_PCT)
+
+
+def _is_day_count(n: _Num, pool: _Pool) -> bool:
+    """'3 busy days', '12 days are flagged': a count of days in a clause about flags. Not
+    'the next 14 days' (a window) and not the public '28 days'."""
+    if n.always or n.pct or not _DAYS_AFTER.match(pool.text[n.end:n.end + 30]):
+        return False
+    if set(_words_before(pool.text, n.start, 1)) & _WINDOW_BEFORE:
+        return False
+    return any(rx.search(pool.clause) for rx in _FLAG_TOPIC.values())
 
 
 def _single_ok(n: _Num, pool: _Pool) -> bool:
-    if n.always or any(value_matches(n.value, q) for q in pool.question):
+    if n.always or _threshold_ok(n, pool) or any(value_matches(n.value, q) for q in pool.question):
+        return True
+    if _is_day_count(n, pool):  # must be a count the tools returned, or the days listed
+        return any(value_matches(n.value, c) for c in pool.day_counts)
+    if any(value_matches(n.value, d) for d in pool.definition):
         return True
     # "10%" can only be a percentage from the tools, never "10 guests"
-    cands = [v.value for v in pool.values if not n.pct or _is_pct_key(v.key)]
+    cands = [v for v in pool.values if not n.pct or _is_pct_key(v.key)]
     if n.sign:
-        return any(value_matches(n.sign * n.value, s) for s in cands)
-    return any(value_matches(n.value, abs(s)) for s in cands)
+        return any(value_matches(n.sign * n.value, v.value)
+                   and not _crosses_threshold(n.value, v) for v in cands)
+    return any(value_matches(n.value, abs(v.value))
+               and not _crosses_threshold(n.value, v) for v in cands)
 
 
 def _item_ok(item: _Item, pool: _Pool) -> bool:
@@ -675,9 +804,13 @@ def _item_ok(item: _Item, pool: _Pool) -> bool:
     a, b = item.nums
     if item.kind == "fraction":  # "4 out of 5 times" = 80%, "1 in 5 falls outside" = 100 - 80
         share = a.value / b.value * 100
-        pcts = [abs(v.value) for v in pool.values if _is_pct_key(v.key)]
+        pcts = [abs(v.value) for v in pool.values if _is_pct_key(v.key)] + pool.definition
         if any(value_matches(share, p) or value_matches(100 - share, p) for p in pcts):
             return True
+        # "x in 10", "x out of 5": a rate, so only its share counts. Otherwise ("3 of the 12
+        # days") both numbers must be grounded on their own.
+        if b.value <= 10 or b.value == 100:
+            return False
         return _single_ok(a, pool) and _single_ok(b, pool)
     # range: a low/high pair of one record, the lowest/highest of one field over different
     # days, or two numbers from the question.
@@ -734,6 +867,9 @@ def faithfulness(result: RunResult) -> dict:
     for _, _, clause, days in units:
         known = sentence_days.get(clause, set())
         sentence_days[clause] = None if days is None or known is None else known | days
+    # "3 busy days" may also count the days the answer itself lists.
+    listed = {d for m in sc.dates if not m.weak for d in m.dates}
+    day_counts = {float(len(listed))} if listed else set()
 
     ungrounded: list[float] = []
     detail: list[dict] = []
@@ -744,6 +880,9 @@ def faithfulness(result: RunResult) -> dict:
             continue
         loose = loose or days is None
         pool = _pool(src, days, sentence_days[clause], text[start:end], question)
+        pool.text = text
+        pool.day_counts = day_counts | set().union(*(
+            c for topic, c in src.flag_counts.items() if _FLAG_TOPIC[topic].search(pool.clause)))
         for it in items:
             if _item_ok(it, pool):
                 continue
@@ -829,7 +968,9 @@ _STOPWORDS = {
         voorspelling verwachting zaterdag zondag maandag dinsdag woensdag donderdag vrijdag
         mei augustus druk rustig normaal gemiddeld ik kan alleen vandaag weekend om tot uit
         bediening barpersoneel keukenpersoneel medewerkers waarschijnlijk minder meer
-        overmorgen bezetting reserveringen""",
+        overmorgen bezetting reserveringen januari februari maart mei juni juli oktober
+        kok koks vloer nodig geboekt waarschijnlijk normaal gesloten mensen achter
+        verwachten verwacht ongeveer""",
     "de": """der die das und ist nicht wir sie mit für auf ein eine einen am im zu von
         erwarten erwartet gäste gästen samstag sonntag montag dienstag mittwoch donnerstag
         freitag mai heute küche ungefähr zwischen tag tage leider keine kein nur es sind wird
@@ -844,19 +985,38 @@ for _a in _LANG_WORDS:  # a word that belongs to two languages says nothing
             _LANG_WORDS[_b] -= _shared
 MIN_LANGUAGE_WORDS = 2
 
+# Dates are the most common words in a short answer ("Vrijdag 16 juni: 4 koks."), so they
+# break a tie: Dutch month/weekday names and no English ones -> Dutch (and the other way).
+_DATE_WORDS = {
+    "en": set("january february march june july august october monday tuesday wednesday "
+              "thursday friday saturday sunday".split()),
+    "nl": set("januari februari maart mei juni juli augustus oktober maandag dinsdag woensdag "
+              "donderdag vrijdag zaterdag zondag".split()),
+}
+# Text that comes from the tools in English whatever the answer's language: role names and
+# the staffing rule ("1 per 35 guests (on the forecast), rounded up, minimum 2").
+_TOOL_ENGLISH = re.compile(
+    r"\d+\s+per\s+\d+\s+guests?(?:\s*\(on the forecast\))?(?:,?\s*rounded up)?"
+    r"(?:,?\s*minimum\s+\d+)?|\b(?:floor|bar|kitchen)\b", re.I)
+
 
 def detect_language(text: str) -> str:
     """'en' | 'nl' | 'de' | 'unknown'. Counts common words of each language, ignoring the
-    "Based on: ..." footer and tool names. The winner must have at least
-    MIN_LANGUAGE_WORDS hits and strictly more than every other language."""
+    "Based on: ..." footer, tool names and English text copied from the tools (role names,
+    staffing rules). The winner must have at least MIN_LANGUAGE_WORDS hits and strictly more
+    than every other language; otherwise month/weekday names decide between en and nl."""
     text = _FOOTER.sub(" ", text or "")
     text = re.sub(r"\bget_\w+", " ", text)
+    text = _TOOL_ENGLISH.sub(" ", text)
     words = re.findall(r"[^\W\d_]+(?:'[^\W\d_]+)?", text.lower().replace("’", "'"))
     counts = {lang: sum(w in s for w in words) for lang, s in _LANG_WORDS.items()}
     best = max(counts, key=counts.get)
-    if counts[best] < MIN_LANGUAGE_WORDS or list(counts.values()).count(counts[best]) > 1:
-        return "unknown"
-    return best
+    if counts[best] >= MIN_LANGUAGE_WORDS and list(counts.values()).count(counts[best]) == 1:
+        return best
+    dates = {lang: any(w in s for w in words) for lang, s in _DATE_WORDS.items()}
+    if dates["nl"] != dates["en"] and counts["de"] == 0:
+        return "nl" if dates["nl"] else "en"
+    return "unknown"
 
 
 def language_ok(result: RunResult, lang: str) -> bool:
@@ -904,7 +1064,7 @@ def forecast_leaks(result: RunResult) -> list[float]:
     question = numbers_in(result.question or "", ctx)
     leaks = []
     for n in _Scanner(result.answer or "", ctx).nums:
-        if n.always or any(value_matches(n.value, q) for q in question):
+        if n.always or n.threshold or any(value_matches(n.value, q) for q in question):
             continue
         if any(value_matches(n.value, abs(s)) for s in src.forecast_values):
             leaks.append(n.value)

@@ -37,7 +37,8 @@ from agent.contract import FLAG_THRESHOLD_PCT, MAX_HORIZON_DAYS  # noqa: E402
 
 SAMPLE_NAME = "City hotel sample (real bookings, export of 31 May 2017)"
 BACKTEST_WEEKS = 8           # self_check's default, as in the app
-ERROR_HORIZONS = range(1, 8)  # accuracy() averages the error over 1-7 days ahead
+BACKTEST_DAYS_AHEAD = (1, 3, 7, 14)  # rows of the self-check that accuracy() reports
+AFTER_EXPORT_DAYS = 14        # the app's default "Days to plan"
 RANGE_PERCENTILE = 80         # pace_p80: 8 in 10 past days stayed within this error
 
 
@@ -166,29 +167,49 @@ class RealBackend:
         return result
 
     def accuracy(self) -> dict:
+        """Two checks, each saying which days it covers, with the same numbers the app shows.
+
+        backtest: the app's "How sure is it, on your own data?" table (self_check on the weeks
+        before the export), per days ahead. after_export: the app's "How this sample turned out"
+        box on its default 14-day plan; only when what really happened on those days is known.
+        """
         d = self._data()
         check = d["check"]
-        near = check[check.days_ahead.isin(ERROR_HORIZONS)]
-        mae = round(float(near.pace_error.mean()), 1) if len(near) else None
-        usual = round(float(near.usual_error.mean()), 1) if len(near) else None
+        rows = check[check.days_ahead.isin(BACKTEST_DAYS_AHEAD)]
+        out = {
+            "backtest": {
+                "weeks": BACKTEST_WEEKS,
+                "description": (f"Replaying the {BACKTEST_WEEKS} weeks before the export: for each past day "
+                                "the forecast is rebuilt from the bookings known back then and compared "
+                                "with what really came, per number of days ahead."),
+                "by_days_ahead": [
+                    {"days_ahead": int(r.days_ahead),
+                     "mean_abs_error_guests": round(float(r.pace_error), 1),
+                     "weekday_average_mean_abs_error_guests": round(float(r.usual_error), 1),
+                     "range_half_width_guests": round(float(r.pace_p80), 1)}
+                    for _, r in rows.iterrows()],
+            },
+            "range_percentile": RANGE_PERCENTILE,
+            "range_meaning": "8 in 10 past days stayed within this distance of the forecast",
+        }
 
-        # The app's "inside the likely range" share: planned open days whose real guest number is
-        # known, and how many landed between low and high.
+        # What really happened on the next 14 days, computed like the app's sample box.
         outcome = P.sample_outcome() if self._is_sample else self._actual
-        coverage, checked = None, 0
         if outcome is not None:
             p = d["plan"]
-            hit = p[~p.closed].assign(actual=p.date.map(outcome)).dropna(subset=["actual", "low", "high"])
-            checked = len(hit)
-            if checked:
-                coverage = _int(100 * ((hit.actual >= hit.low) & (hit.actual <= hit.high)).mean())
-
-        note = (f"Average error 1-7 days ahead, replayed on the {BACKTEST_WEEKS} weeks before the export "
-                f"(weekday average alone: {usual}); ")
-        note += (f"the likely range held the real number on {coverage}% of {checked} planned days."
-                 if coverage is not None else
-                 "range coverage is unknown: what really happened after the export is not in the data.")
-        return {"backtest_weeks": BACKTEST_WEEKS, "mean_abs_error_guests": mae,
-                "usual_mean_abs_error_guests": usual, "range_coverage_pct": coverage,
-                "range_coverage_days_checked": checked, "range_percentile": RANGE_PERCENTILE,
-                "note": note}
+            planned = p[(p.days_ahead <= AFTER_EXPORT_DAYS) & ~p.closed]
+            hit = planned.assign(actual=planned.date.map(outcome)).dropna(subset=["actual"])
+            if len(hit):
+                inside = ((hit.actual >= hit.low) & (hit.actual <= hit.high)).mean()
+                out["after_export"] = {
+                    "description": (("Known only because the sample is history: " if self._is_sample
+                                     else "From the real outcomes provided: ")
+                                    + f"what really happened on the next {AFTER_EXPORT_DAYS} days "
+                                    "after the export."),
+                    "days_checked": len(hit),
+                    "inside_range_pct": int(round(100 * inside)),
+                    "mean_abs_error_guests": round(float((hit.forecast - hit.actual).abs().mean()), 1),
+                    "weekday_average_mean_abs_error_guests":
+                        round(float((hit.usual - hit.actual).abs().mean()), 1),
+                }
+        return out

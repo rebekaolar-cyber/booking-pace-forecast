@@ -52,5 +52,27 @@ class FakeBackend:
         return {"date": date.isoformat(), "forecast_guests": fc, "staff": staff}
 
     def accuracy(self) -> dict:
-        return {"backtest_weeks": 8, "mean_abs_error_guests": 8.6,
-                "range_coverage_pct": 80, "range_percentile": 80}
+        # Made-up numbers, same shape as RealBackend.accuracy().
+        return {
+            "backtest": {
+                "weeks": 8,
+                "description": "Fake (tests): replaying the 8 weeks before the export.",
+                "by_days_ahead": [
+                    {"days_ahead": 1, "mean_abs_error_guests": 4.2,
+                     "weekday_average_mean_abs_error_guests": 21.3, "range_half_width_guests": 5.5},
+                    {"days_ahead": 3, "mean_abs_error_guests": 5.9,
+                     "weekday_average_mean_abs_error_guests": 21.3, "range_half_width_guests": 7.4},
+                    {"days_ahead": 7, "mean_abs_error_guests": 8.6,
+                     "weekday_average_mean_abs_error_guests": 21.1, "range_half_width_guests": 11.2},
+                    {"days_ahead": 14, "mean_abs_error_guests": 11.3,
+                     "weekday_average_mean_abs_error_guests": 20.8, "range_half_width_guests": 15.6},
+                ],
+            },
+            "range_percentile": 80,
+            "range_meaning": "8 in 10 past days stayed within this distance of the forecast",
+            "after_export": {
+                "description": "Fake (tests): what really happened on the next 14 days.",
+                "days_checked": 13, "inside_range_pct": 69, "mean_abs_error_guests": 9.4,
+                "weekday_average_mean_abs_error_guests": 17.8,
+            },
+        }

@@ -41,7 +41,11 @@ class ForecastBackend(Protocol):
         """Role names the staffing rules know, e.g. ["bar", "kitchen", "floor"]."""
 
     def accuracy(self) -> dict:
-        """{"backtest_weeks", "mean_abs_error_guests", "range_coverage_pct", "range_percentile"}"""
+        """{"backtest": {"weeks", "description", "by_days_ahead": [{"days_ahead",
+        "mean_abs_error_guests", "weekday_average_mean_abs_error_guests", "range_half_width_guests"}]},
+        "range_percentile", "range_meaning",
+        "after_export" (only when real outcomes are known): {"description", "days_checked",
+        "inside_range_pct", "mean_abs_error_guests", "weekday_average_mean_abs_error_guests"}}"""
 
 
 # --------------------------------------------------------------------------- tool schemas
@@ -107,8 +111,13 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "get_accuracy",
         "description": (
-            "How accurate the forecast has been: the average error over the last 8 weeks "
-            "(backtest) and how often the real number landed inside the likely range."
+            "How far off the forecast usually is, and which days each number covers. "
+            "'backtest': replaying the 8 weeks before the export, the average error in guests "
+            "per number of days ahead (1, 3, 7, 14), next to the weekday average's error and the "
+            "likely range's half-width. 'range_percentile' 80: 8 in 10 past days stayed within that "
+            "distance of the forecast. 'after_export' (only when known, e.g. the sample is history): "
+            "what really happened on the next 14 days, how many landed inside the likely range "
+            "and the average error."
         ),
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },

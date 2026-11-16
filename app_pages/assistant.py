@@ -153,3 +153,7 @@ def render(backend) -> None:
         st.markdown(result.answer)
         _show_details(result)
     history.append((question, result))
+    # This answer may have used the last question. The input above was drawn before it, still
+    # enabled, so draw the page again: it then shows the limit note and disables the input.
+    if len(history) >= MAX_QUESTIONS_PER_SESSION or counter.reached(MAX_QUESTIONS_PER_DAY):
+        st.rerun()

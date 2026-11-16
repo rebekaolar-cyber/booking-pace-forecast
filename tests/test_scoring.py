@@ -7,13 +7,15 @@ FakeBackend facts used below (today = Thursday 2017-06-01):
   Sun 2017-06-04: forecast 82, range 72-92        Fri 2017-06-02: forecast 94, range 85-103
   Sat 2017-06-10: forecast 148, range 136-160, +25%, busy
   Staffing 2017-06-03: bar 3, kitchen 4, floor 5 (1 per 40 / 30 / 25 guests)
-  Accuracy: mean abs error 8.6 guests, range coverage 80%
+  Sat 2017-06-10 busy (+25%), Tue 2017-06-20 quiet (-15%): the only 2 flagged days
+  Accuracy: backtest mean abs error 4.2 / 5.9 / 8.6 / 11.3 guests (1/3/7/14 days ahead),
+  range_percentile 80 ("8 in 10 past days stayed within"), after export 69% inside the range
 """
 from __future__ import annotations
 
 import pytest
 
-from agent.contract import RunResult, ToolCall, run_tool
+from agent.contract import FLAG_THRESHOLD_PCT, RunResult, ToolCall, run_tool
 from agent.fake_backend import FakeBackend
 from evals import scoring
 
@@ -132,10 +134,9 @@ CAUGHT = [  # (label, answer, calls): must be flagged as invented
 GROUNDED = [  # (label, answer, calls): a good answer must not be flagged
     ("en dash range", "Saturday: 113 guests (likely 104–122).", FC_SAT),
     ("clock time", "Expect the peak around 18:00 on Saturday, 113 guests.", FC_SAT),
-    ("dutch decimal", "Gemiddelde fout: 8,6 gasten; 80% binnen de marge.", ACC),
+    ("dutch decimal", "Gemiddelde fout: 8,6 gasten; 69% binnen de marge.", ACC),
     ("rounding 8.6 -> 9", "Off by about 9 guests on average.", ACC),
-    ("fraction of coverage", "The real number landed in the range 4 out of 5 times.", ACC),
-    ("one in five outside", "About 1 in 5 days falls outside the range.", ACC),
+    ("coverage pct", "After the export the real number landed inside the range on 69% of days.", ACC),
     ("count of flagged days", "There are 2 flagged days.", FLAGS),
     ("dutch numeric date 3-6", "Op 3-6 verwachten we 113 gasten.", FC_SAT),
     ("week number", "In week 23 it's busy: 113 guests.", FC_SAT),
@@ -252,8 +253,110 @@ def test_rounding_and_numbers_from_the_question():
              "The rule is 1 per 40 guests, so 2 people is not enough; you need 3 bartenders.",
              [("get_staffing", {"date": SAT, "role": "bar"})])
     assert scoring.faithfulness(r)["ok"] is True
-    r = make("How accurate?", "Off by about 9 guests on average (8,6); range holds 80% of the time.", ACC)
+    r = make("How accurate?", "Off by about 9 guests on average (8,6); range holds 69% of the time.", ACC)
     assert scoring.faithfulness(r)["ok"] is True
+
+
+# --------------------------------------------------------------------------- second tester round
+# Hand-made tool outputs copied from the real backend (today 2017-06-01), so these cases do not
+# depend on the data file: Sat 24 Jun is -14.5% (NOT flagged), Wed 7 Jun is -15.8% (flagged).
+
+def _day(date, weekday, booked, usual, forecast, lo, hi, pct, flag):
+    return {"date": date, "weekday": weekday, "booked_so_far_guests": booked,
+            "usual_for_weekday_guests": usual, "forecast_guests": forecast, "range_low_guests": lo,
+            "range_high_guests": hi, "vs_usual_pct": pct, "flag": flag, "closed": False}
+
+
+REAL_SAT24 = _day("2017-06-24", "Saturday", 106, 136, 116, 100, 132, -14.5, None)
+REAL_WED7 = _day("2017-06-07", "Wednesday", 98, 127, 107, 95, 118, -15.8, "quiet")
+REAL_ACC = {"backtest": {"weeks": 8, "description": "Replaying the 8 weeks before the export.",
+                         "by_days_ahead": [{"days_ahead": 7, "mean_abs_error_guests": 7.9,
+                                            "weekday_average_mean_abs_error_guests": 26.7,
+                                            "range_half_width_guests": 11.7}]},
+            "range_percentile": 80,
+            "range_meaning": "8 in 10 past days stayed within this distance of the forecast",
+            "after_export": {"description": "What really happened on the next 14 days.",
+                             "days_checked": 14, "inside_range_pct": 64,
+                             "mean_abs_error_guests": 8.9,
+                             "weekday_average_mean_abs_error_guests": 19.0}}
+
+
+def _out(name: str, output: dict) -> ToolCall:
+    """A tool call with a hand-made output (no backend)."""
+    return ToolCall(name=name, input={}, output=output, seconds=0.0)
+
+
+def make_any(answer: str, calls: list) -> RunResult:
+    """Like make(), but a ToolCall in ``calls`` is used as it is."""
+    r = make("q", answer, [c for c in calls if not isinstance(c, ToolCall)])
+    r.tool_calls = [c for c in calls if isinstance(c, ToolCall)] + r.tool_calls
+    return r
+
+
+SAT24 = [_out("get_forecast", {"days": [REAL_SAT24]})]
+WED7 = [_out("get_flagged_days", {"days": [REAL_WED7], "threshold_pct": FLAG_THRESHOLD_PCT})]
+RACC = [_out("get_accuracy", REAL_ACC)]
+
+ROUND2 = [  # (label, answer, outputs, grounded?)
+    # 1. 15 is the flag threshold, not a day's change; rounding must not cross the threshold
+    ("15% for -14.5 makes it look flagged", "Sat 24 Jun looks 15% quieter than usual.", SAT24, False),
+    ("-15% for -14.5", "Sat 24 Jun: -15% vs usual.", SAT24, False),
+    ("15% quieter even with 'flagged' nearby", "Sat 24 Jun is 15% quieter, so it is flagged.", SAT24, False),
+    ("threshold_pct in the output is no day value", "Wed 7 Jun is 15% quieter than usual.",
+     WED7 + SAT24, False),
+    ("-14.5 written exactly", "Sat 24 Jun: -14.5% vs usual, just under the 15% flag.", SAT24, True),
+    ("14.5 quieter", "Sat 24 Jun looks 14.5% quieter than usual, below the threshold.", SAT24, True),
+    ("threshold: at least 15%", "Days at least 15% busier or quieter than usual are flagged.", [], True),
+    ("threshold: 15% or more", "A day is flagged at 15% or more.", [], True),
+    ("threshold: drempel", "De drempel is 15%; zaterdag 24 juni blijft eronder.", SAT24, True),
+    ("window: 28 days", "I can only look 28 days ahead.", [], True),
+    ("window: 4 weeks", "The forecast reaches 4 weeks ahead.", [], True),
+    ("flagged -15.8 rounded to 16", "Wed 7 Jun: 16% quieter than usual (107 guests).", WED7, True),
+    ("flagged -15.8 rounded to 15 is not ok", "Wed 7 Jun is 15% quieter than usual.", WED7, False),
+    # 2. range_percentile (80) defines the range; it is not how often the range held
+    ("80% coverage claim", "The likely range held the real number on 80% of days.", RACC, False),
+    ("80% landed inside", "80% of real numbers landed inside the range.", RACC, False),
+    ("8 in 10 as coverage", "The range held the real number on 8 in 10 days.", RACC, False),
+    ("nl: 80% lag binnen", "Het echte aantal lag op 80% van de dagen binnen de marge.", RACC, False),
+    ("definition: 8 in 10", "The range is set so 8 in 10 past days stayed within it.", RACC, True),
+    ("definition: 80% stayed within", "80% of past days stayed within this distance.", RACC, True),
+    ("definition: 80th percentile", "The range is the 80th percentile of past errors.", RACC, True),
+    ("real coverage 64%", "After the export the range held the real number on 64% of 14 days.", RACC, True),
+    # 4. counts of flagged days and averages
+    ("3 days flagged when 2 are", "3 days are flagged.", FLAGS, False),
+    ("2 flagged days", "2 days are flagged in the next 4 weeks.", FLAGS, True),
+    ("1 busy day", "There is 1 busy day: Sat 10 Jun (+25%).", FLAGS, True),
+    ("2 busy days when 1 is", "There are 2 busy days.", FLAGS, False),
+    ("count of days the answer lists", "Two busy days: Sat 3 Jun and Sun 4 Jun.", FC_WEEKEND, True),
+    ("window is not a count", "In the next 28 days, 2 days are flagged.", FLAGS, True),
+    ("loose average from one day's number", "On average 113 guests a day over the next two weeks.",
+     FC_28, False),
+    ("loose average = usual value", "On average a Saturday gets 118 guests.", FC_28, True),
+]
+
+
+@pytest.mark.parametrize("label, answer, calls, grounded", ROUND2, ids=[c[0] for c in ROUND2])
+def test_second_tester_round(label, answer, calls, grounded):
+    r = make_any(answer, calls)
+    assert scoring.faithfulness(r)["ok"] is grounded, scoring.faithfulness(r)
+
+
+@pytest.mark.parametrize("answer, lang", [
+    ("Vrijdag 16 juni: 4 koks.", "nl"),
+    ("vr 16 jun: personeel nodig: kitchen 4 (voor 132 gasten verwacht). "
+     "Regel: 1 per 35 guests (on the forecast), rounded up, minimum 2.\nGebaseerd op: voorspelling.", "nl"),
+    ("za 10 jun: bar 2 nodig (voor 74 gasten verwacht).", "nl"),
+    ("Zaterdag 3 juni: bar 3, keuken 4.", "nl"),
+    ("Sat 3 Jun: staff needed: bar 3 (for 138 guests expected). "
+     "Rule: 1 per 60 guests (on the forecast), rounded up, minimum 1.", "en"),
+    ("Friday 16 June: 4 cooks.", "en"),
+])
+def test_detect_language_short_and_tool_text(answer, lang):
+    assert scoring.detect_language(answer) == lang
+
+
+def test_known_limits_are_documented():
+    assert "KNOWN_LIMITS" in scoring.__dict__ and scoring.KNOWN_LIMITS.strip()
 
 
 # --------------------------------------------------------------------------- tool use
@@ -355,7 +458,7 @@ def test_refusal_not_applicable_to_in_scope_items():
     ("We expect 113 guests on Saturday.", "en"),
     ("We expect 118 guests on Saturday, between 106 and 130.", "en"),
     ("Am Samstag erwarten wir 113 Gäste.", "de"),
-    ("Saturday: 113 (104–122).", "unknown"),   # too few words to tell
+    ("Saturday: 113 (104–122).", "en"),        # too few words: the English day name decides
     ("113 (104-122)", "unknown"),
     ("", "unknown"),
 ])
@@ -399,11 +502,17 @@ def test_contains_expected_numbers():
 
 def test_expected_numbers_use_the_same_rounding_as_faithfulness():
     ref = [run_tool(B, "get_accuracy", {})]
-    fields = ["mean_abs_error_guests", "range_coverage_pct"]
-    r = make("q", "On average about 9 guests off; 80% inside the range.", ACC)
-    assert scoring.contains_expected_numbers(r, ref, fields) == {"missing": [], "ok": True}
-    r = make("q", "On average about 10 guests off; 80% inside the range.", ACC)
-    assert scoring.contains_expected_numbers(r, ref, fields)["missing"] == [8.6]
+    assert scoring.contains_expected_numbers(
+        make("q", "After the export, 69% landed inside the range.", ACC), ref,
+        ["inside_range_pct"]) == {"missing": [], "ok": True}
+    assert scoring.contains_expected_numbers(
+        make("q", "After the export, 80% landed inside the range.", ACC), ref,
+        ["inside_range_pct"])["missing"] == [69.0]
+    # 4.2 -> 4, 5.9 -> 6, 8.6 -> 9, 11.3 -> 11, 9.4 -> 9
+    r = make("q", "Off by 4, 6, 9 and 11 guests at 1, 3, 7 and 14 days ahead; 69% inside.", ACC)
+    assert scoring.contains_expected_numbers(r, ref, ["mean_abs_error_guests", "inside_range_pct"])["ok"]
+    r = make("q", "Off by 4, 6, 10 and 11 guests at 1, 3, 7 and 14 days ahead; 69% inside.", ACC)
+    assert scoring.contains_expected_numbers(r, ref, ["mean_abs_error_guests"])["missing"] == [8.6, 9.4]
 
 
 def test_expected_numbers_accept_number_words():

@@ -24,11 +24,12 @@ permissions:
 jobs:
   live-eval:
     runs-on: ubuntu-latest
-    env:
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    # The key is given only to the two steps that need it, not to pip install or checkout.
     steps:
       - name: Check for API key
         id: key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           if [ -n "$ANTHROPIC_API_KEY" ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
@@ -54,6 +55,7 @@ jobs:
       - name: Live eval
         if: steps.key.outputs.present == 'true'
         env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # Inputs go through env, not straight into the script, so they cannot inject shell code.
           EVAL_SAMPLE: ${{ inputs.sample || '10' }}
           EVAL_MODEL: ${{ inputs.model || 'claude-haiku-5-5' }}

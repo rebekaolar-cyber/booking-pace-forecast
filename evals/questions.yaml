@@ -313,7 +313,7 @@
     tools: [get_accuracy]
     calls:
       - {tool: get_accuracy, args: {}}
-    numbers_from: [mean_abs_error_guests, range_coverage_pct]
+    numbers_from: [inside_range_pct]
 
 - id: nl06
   category: dutch
@@ -534,7 +534,7 @@
     tools: [get_accuracy]
     calls:
       - {tool: get_accuracy, args: {}}
-    numbers_from: [mean_abs_error_guests, range_coverage_pct]
+    numbers_from: [inside_range_pct]
 
 - id: ta02
   category: trust_accuracy
@@ -555,4 +555,4 @@
     tools: [get_accuracy]
     calls:
       - {tool: get_accuracy, args: {}}
-    numbers_from: [range_coverage_pct]
+    numbers_from: [inside_range_pct]

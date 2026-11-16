@@ -5,11 +5,13 @@ pd = pytest.importorskip("pandas")
 P = pytest.importorskip("pace.plan")
 
 import datetime as dt  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 from agent.contract import MAX_HORIZON_DAYS, TOOL_NAMES, run_tool  # noqa: E402
 from agent.fake_backend import FakeBackend  # noqa: E402
 from agent.real_backend import RealBackend  # noqa: E402
 
+ROOT = Path(__file__).resolve().parents[1]
 TODAY = "2017-06-01"
 LAST = "2017-06-28"
 SAT = "2017-06-03"
@@ -114,19 +116,60 @@ def test_shapes_match_the_fake_backend(real):
     assert isinstance(r_day["vs_usual_pct"], float)  # one decimal, so it agrees with the flag
     f_st, r_st = fake.staffing(dt.date(2017, 6, 3), None), real.staffing(dt.date(2017, 6, 3), None)
     assert set(r_st) == set(f_st) and set(r_st["staff"][0]) == set(f_st["staff"][0])
-    assert set(fake.accuracy()) <= set(real.accuracy())
+    f_acc, r_acc = fake.accuracy(), real.accuracy()
+    assert set(f_acc) == set(r_acc)
+    assert set(f_acc["backtest"]) == set(r_acc["backtest"])
+    assert set(f_acc["backtest"]["by_days_ahead"][0]) == set(r_acc["backtest"]["by_days_ahead"][0])
+    assert set(f_acc["after_export"]) == set(r_acc["after_export"])
     assert set(fake.today_and_data_range()) == set(real.today_and_data_range())
 
 
-def test_accuracy_is_computed_from_the_self_check(real):
-    _, check = app_run_plan(P.sample_export(), P.SAMPLE_EXPORT_DAY)
+def test_accuracy_matches_the_app_s_own_computation(real):
+    """Every number get_accuracy returns equals what the app computes on the sample."""
     acc = real.accuracy()
-    near = check[check.days_ahead <= 7]
-    assert acc["backtest_weeks"] == 8 and acc["range_percentile"] == 80
-    assert acc["mean_abs_error_guests"] == round(near.pace_error.mean(), 1)
-    assert acc["usual_mean_abs_error_guests"] == round(near.usual_error.mean(), 1)
-    assert 0 <= acc["range_coverage_pct"] <= 100 and acc["range_coverage_days_checked"] == 28
-    assert acc["mean_abs_error_guests"] < acc["usual_mean_abs_error_guests"]
+    assert acc["range_percentile"] == 80 and "8 in 10" in acc["range_meaning"]
+    # backtest = the app's "How sure is it, on your own data?" table (check.round(1))
+    _, check = app_run_plan(P.sample_export(), P.SAMPLE_EXPORT_DAY)
+    table = check.round(1).set_index("days_ahead")
+    assert acc["backtest"]["weeks"] == 8 and "8 weeks before the export" in acc["backtest"]["description"]
+    rows = acc["backtest"]["by_days_ahead"]
+    assert [r["days_ahead"] for r in rows] == [1, 3, 7, 14]
+    for r in rows:
+        t = table.loc[r["days_ahead"]]
+        assert r["mean_abs_error_guests"] == t.pace_error
+        assert r["weekday_average_mean_abs_error_guests"] == t.usual_error
+        assert r["range_half_width_guests"] == t.pace_p80
+    # after_export = the app's "How this sample turned out" box on its default 14-day plan
+    p, _ = app_run_plan(P.sample_export(), P.SAMPLE_EXPORT_DAY, days=14)
+    p["actual"] = p.date.map(P.sample_outcome())
+    hit = p[~p.closed].assign(actual=p.actual).dropna(subset=["actual"])
+    after = acc["after_export"]
+    assert "sample is history" in after["description"] and "next 14 days" in after["description"]
+    assert after["days_checked"] == len(hit) == 14
+    inside = ((hit.actual >= hit.low) & (hit.actual <= hit.high)).mean()
+    assert f"{after['inside_range_pct']}%" == f"{inside:.0%}"
+    assert after["mean_abs_error_guests"] == round((hit.forecast - hit.actual).abs().mean(), 1)
+    assert after["weekday_average_mean_abs_error_guests"] == round((hit.usual - hit.actual).abs().mean(), 1)
+    assert after["inside_range_pct"] != acc["range_percentile"]  # one fortnight, not the percentile
+
+
+def test_accuracy_matches_what_the_running_app_shows(real):
+    """Same check against the app itself, run headless: the self-check table and the sample box."""
+    AppTest = pytest.importorskip("streamlit.testing.v1").AppTest
+    at = AppTest.from_file(str(ROOT / "streamlit_app.py"), default_timeout=180).run()
+    assert not at.exception
+    acc = real.accuracy()
+    table = next(df.value for df in at.dataframe if "Days ahead" in df.value.columns).set_index("Days ahead")
+    for r in acc["backtest"]["by_days_ahead"]:
+        t = table.loc[r["days_ahead"]]
+        assert (r["mean_abs_error_guests"], r["weekday_average_mean_abs_error_guests"],
+                r["range_half_width_guests"]) == (t["Forecast off by (avg)"], t["Usual weekday off by (avg)"],
+                                                   t["8 in 10 days within"])
+    box = next(s.value for s in at.success if "How this sample turned out" in s.value)
+    after = acc["after_export"]
+    assert f"off by **{after['mean_abs_error_guests']:.0f}** guests" in box
+    assert f"(the usual weekday number: {after['weekday_average_mean_abs_error_guests']:.0f})" in box
+    assert f"**{after['inside_range_pct']}%** of these days" in box
 
 
 def test_computed_once(real):
@@ -154,7 +197,8 @@ def test_custom_export_with_an_earlier_export_day():
     assert st["staff"] == [{"role": "kitchen", "count": int(want.loc[pd.Timestamp("2017-04-22"), "Kitchen"]),
                             "rule": "1 per 40 guests (on the forecast), rounded up, minimum 1"}]
     acc = b.accuracy()
-    assert acc["range_coverage_pct"] is None and "unknown" in acc["note"]
+    assert "after_export" not in acc  # what happened after 15 Apr is not in this export
+    assert [r["days_ahead"] for r in acc["backtest"]["by_days_ahead"]] == [1, 3, 7, 14]
     assert "past" in run_tool(b, "get_forecast", {"start_date": "2017-04-15", "end_date": "2017-04-20"})["error"]
 
 
