@@ -1,0 +1,300 @@
+##[group]Run python -m evals.run --backend real --sample "$EVAL_SAMPLE" --model "$EVAL_MODEL" --prompt "$EVAL_PROMPT"
+[36;1mpython -m evals.run --backend real --sample "$EVAL_SAMPLE" --model "$EVAL_MODEL" --prompt "$EVAL_PROMPT"[0m
+shell: /usr/bin/bash -e {0}
+env:
+  pythonLocation: /opt/hostedtoolcache/Python/3.13.18/x64
+  PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.13.18/x64/lib/pkgconfig
+  Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.18/x64
+  Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.18/x64
+  Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.18/x64
+  LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.13.18/x64/lib
+  ANTHROPIC_API_KEY: ***
+  EVAL_SAMPLE: 50
+  EVAL_MODEL: claude-sonnet-5-5
+  EVAL_PROMPT: v2
+##[endgroup]
+[1/50] PASS sd01
+[2/50] PASS sd03
+[3/50] PASS sd04
+[4/50] PASS sd05
+[5/50] FAIL sd06  failed: faithfulness
+[6/50] PASS sd07
+[7/50] PASS sd09
+[8/50] PASS sd10
+[9/50] PASS dr01
+[10/50] FAIL dr02  failed: faithfulness
+[11/50] PASS dr03
+[12/50] PASS dr04
+[13/50] FAIL dr05  failed: faithfulness
+[14/50] PASS dr06
+[15/50] FAIL dr07  failed: tool_choice
+[16/50] PASS dr08
+[17/50] PASS st01
+[18/50] PASS st02
+[19/50] PASS st03
+[20/50] PASS st04
+[21/50] PASS st05
+[22/50] PASS st06
+[23/50] PASS st07
+[24/50] PASS st08
+[25/50] PASS nl01
+[26/50] PASS nl02
+[27/50] FAIL nl03  failed: faithfulness
+[28/50] PASS nl04
+[29/50] PASS nl05
+[30/50] PASS nl06
+[31/50] PASS nl07
+[32/50] PASS nl08
+[33/50] PASS oos01
+[34/50] PASS oos02
+[35/50] PASS oos03
+[36/50] PASS oos04
+[37/50] PASS oos05
+[38/50] FAIL oos06  failed: refusal
+[39/50] FAIL oos07  failed: tool_choice, refusal
+[40/50] PASS rd01
+[41/50] PASS rd02
+[42/50] PASS rd03
+[43/50] PASS rd04
+[44/50] PASS rd05
+[45/50] FAIL rd06  failed: faithfulness
+[46/50] FAIL rd07  failed: faithfulness
+[47/50] PASS rd08
+[48/50] FAIL ta01  failed: faithfulness
+[49/50] PASS ta02
+[50/50] FAIL ta03  failed: faithfulness
+
+Eval: claude-sonnet-5-5 / prompt v2 / real backend / 50 questions
+  passed (all checks)  39/50  (78%)
+  faithfulness         42/50  (84%)
+  tool_choice          48/50  (96%)
+  args                 50/50  (100%)
+  refusal              6/8  (75%)
+  language             50/50  (100%)
+  numbers              36/36  (100%)
+  loose faithfulness   0 (answers that name no day; checked against every day)
+  errors               0
+  latency              p50 4.34 s, p95 6.213 s
+  mean tokens          5785.6 in, 385.9 out
+  cost                 $0.7715 total, $1.5430 per 100 questions
+
+Saved /home/runner/work/booking-pace-forecast/booking-pace-forecast/evals/results/20261116T190254Z_claude-sonnet-5-5_v2.json
+
+Failed questions:
+
+--- sd06 (single_day, en) failed: faithfulness
+Q: What is the likely lowest and highest number of guests for Sunday 11 June 2017?
+A: For Sun 11 Jun, the likely range is **135 to 164 guests**. The forecast is 149.
+   
+   - 147 guests are already booked.
+   - A usual Sunday is 123 guests. This Sunday is 21.7% above usual, so it is flagged busy.
+   
+   Based on: forecast.
+   tool get_today_and_data_range {}
+   tool get_forecast {"start_date": "2017-06-11", "end_date": "2017-06-11"}
+   not traced to a tool: [21.7]
+     {'number': 21.7, 'clause': 'This Sunday is 21.7% above usual, so it is flagged busy.', 'days': ['2017-06-04']}
+
+--- dr02 (date_range, en) failed: faithfulness
+Q: Which days between 2017-06-02 and 2017-06-28 are flagged as unusually busy or quiet?
+A: Eleven days are flagged between Fri 2 Jun and Wed 28 Jun. Each line shows the forecast guests, the likely range and the difference from usual for that weekday.
+   
+   **Busy**
+   - Mon 5 Jun: 182 (172–193), 33.9% above usual
+   - Sun 11 Jun: 149 (135–164), 21.7% above usual
+   - Mon 12 Jun: 165 (152–179), 21.4% above usual
+   - Sat 17 Jun: 157 (141–173), 15.9% above usual
+   - Tue 20 Jun: 163 (147–179), 39.4% above usual
+   - Sun 25 Jun: 184 (168–200), 50.0% above usual
+   - Tue 27 Jun: 144 (128–160), 23.7% above usual
+   - Wed 28 Jun: 190 (174–206), 50.0% above usual
+   
+   **Quiet**
+   - Wed 7 Jun: 107 (95–118), 15.8% below usual
+   - Sat 10 Jun: 74 (61–88), 45.1% below usual
+   - Fri 16 Jun: 132 (116–148), 23.4% below usual
+   - Fri 23 Jun: 139 (123–155), 19.8% below usual
+   
+   Based on: flagged days.
+   tool get_today_and_data_range {}
+   tool get_flagged_days {"start_date": "2017-06-02", "end_date": "2017-06-28"}
+   not traced to a tool: [11.0]
+     {'number': 11.0, 'clause': 'Eleven days are flagged between Fri 2 Jun and', 'days': ['2017-06-02']}
+
+--- dr05 (date_range, en) failed: faithfulness
+Q: Are there any unusually quiet days from 19 to 25 June 2017?
+A: Yes, one day is flagged quiet: **Fri 23 Jun**.
+   
+   - **Fri 23 Jun:** forecast 139 guests (likely range 123–155). That is 19.8% below usual for a Friday, which is 173.
+   
+   Two other days are close but not flagged, because the threshold is 15%:
+   - Sat 24 Jun: forecast 116 (100–132), 14.5% below usual.
+   - Wed 21 Jun: forecast 110 (94–126), 12.9% below usual.
+   
+   The week also has two busy days: Tue 20 Jun (163, range 147–179, 39.4% above usual) and Sun 25 Jun (184, range 168–200, 50.0% above usual).
+   
+   Based on: forecast, flagged days.
+   tool get_today_and_data_range {}
+   tool get_flagged_days {"start_date": "2017-06-19", "end_date": "2017-06-25"}
+   tool get_forecast {"start_date": "2017-06-19", "end_date": "2017-06-25"}
+   not traced to a tool: [2.0]
+     {'number': 2.0, 'clause': 'Two other days are close but not flagged, because the threshold is 15%:', 'days': ['2017-06-23']}
+
+--- dr07 (date_range, en) failed: tool_choice
+Q: How do 22 to 25 June 2017 compare with what is usual for those weekdays?
+A: Forecast guests against the usual number for each weekday:
+   
+   | Day | Forecast (range) | Usual | vs usual |
+   |---|---|---|---|
+   | Thu 22 Jun | 144 (128–160) | 153 | 6.0% below |
+   | Fri 23 Jun | 139 (123–155) | 173 | 19.8% below – **quiet** |
+   | Sat 24 Jun | 116 (100–132) | 136 | 14.5% below (not flagged) |
+   | Sun 25 Jun | 184 (168–200) | 123 | 50.0% above – **busy** |
+   
+   - Fri 23 Jun is flagged quiet. Sun 25 Jun is flagged busy, and its bookings are already at 185 guests.
+   - Thu 22 Jun and Sat 24 Jun are below usual, but not by enough to be flagged. The threshold is 15%.
+   
+   Based on: forecast, flagged days.
+   tool get_today_and_data_range {}
+   tool get_forecast {"start_date": "2017-06-22", "end_date": "2017-06-25"}
+   tool get_flagged_days {"start_date": "2017-06-22", "end_date": "2017-06-25"}
+
+--- nl03 (dutch, nl) failed: faithfulness
+Q: Welke dagen tussen 1 en 14 juni 2017 zijn veel drukker of rustiger dan normaal?
+A: Tussen do 1 jun en wo 14 jun zijn 5 dagen drukker of rustiger dan normaal (grens: 15%):
+   
+   **Drukker**
+   - ma 5 jun: 182 gasten (range 172-193), 33.9% boven normaal (normaal 136)
+   - zo 11 jun: 149 gasten (range 135-164), 21.7% boven normaal (normaal 123)
+   - ma 12 jun: 165 gasten (range 152-179), 21.4% boven normaal (normaal 136)
+   
+   **Rustiger**
+   - wo 7 jun: 107 gasten (range 95-118), 15.8% onder normaal (normaal 127)
+   - za 10 jun: 74 gasten (range 61-88), 45.1% onder normaal (normaal 136)
+   
+   De overige dagen wijken minder dan 15% af van normaal.
+   
+   Gebaseerd op: flagged days.
+   tool get_today_and_data_range {}
+   tool get_flagged_days {"start_date": "2017-06-01", "end_date": "2017-06-14"}
+   not traced to a tool: [5.0, 15.0]
+     {'number': 5.0, 'clause': 'wo 14 jun zijn 5 dagen drukker of rustiger dan normaal (grens: 15%):', 'days': ['2017-06-14']}
+     {'number': 15.0, 'clause': 'De overige dagen wijken minder dan 15% af van normaal.', 'days': ['2017-06-10']}
+
+--- oos06 (out_of_scope, en) failed: refusal
+Q: What will the weather be like on Saturday 3 June 2017?
+A: I don't know the weather for Sat 3 Jun 2017. None of my tools provide weather data.
+   
+   I can give you the expected guests (with a likely range), busy or quiet flags, and the staffing needed for that day. Want me to look those up?
+   
+   Based on: no tools used.
+   note: no weather data
+
+--- oos07 (out_of_scope, en) failed: tool_choice, refusal
+Q: Can you book a table for 6 people on Saturday 3 June 2017?
+A: I can't book tables. I can only read forecasts and staffing numbers, so you'll need to book through your reservation system.
+   
+   I can tell you how busy Sat 3 Jun looks:
+   - **Forecast:** 138 guests (likely range 129–147).
+   - **Booked so far:** 135 guests.
+   - **Usual for a Saturday:** 136 guests.
+   - **Compared with usual:** 2.0% above, so the day isn't flagged busy or quiet.
+   
+   I can also pull the staffing needs for that day if you want them.
+   
+   Based on: forecast.
+   tool get_today_and_data_range {}
+   tool get_forecast {"start_date": "2017-06-03", "end_date": "2017-06-03"}
+   note: the tools are read-only
+
+--- rd06 (relative_dates, en) failed: faithfulness
+Q: Are any days in the next two weeks flagged as unusually busy or quiet?
+A: Four days stand out in the next two weeks (Thu 1 Jun to Wed 14 Jun). Two are busy and two are quiet. Mon 12 Jun is also flagged busy, which makes five flagged days in all.
+   
+   **Busy**
+   - Mon 5 Jun: forecast 182 guests (range 172-193), 33.9% above usual.
+   - Sun 11 Jun: forecast 149 guests (range 135-164), 21.7% above usual.
+   - Mon 12 Jun: forecast 165 guests (range 152-179), 21.4% above usual.
+   
+   **Quiet**
+   - Wed 7 Jun: forecast 107 guests (range 95-118), -15.8% vs usual.
+   - Sat 10 Jun: forecast 74 guests (range 61-88), -45.1% vs usual.
+   
+   All other days are within 15% of usual.
+   
+   Based on: flagged days.
+   tool get_today_and_data_range {}
+   tool get_flagged_days {"start_date": "2017-06-01", "end_date": "2017-06-14"}
+   not traced to a tool: [4.0, 15.0]
+     {'number': 4.0, 'clause': 'Four days stand out in the next two weeks (Thu 1 Jun to Wed 14 Jun).', 'days': ['2017-06-01', '2017-06-14']}
+     {'number': 15.0, 'clause': 'All other days are within 15% of usual.', 'days': ['2017-06-10']}
+   note: next two weeks; every reasonable reading (14 days from today, 2017-06-01..2017-06-14, or from tomorrow, 2017-06-02..2017-06-15) covers 2017-06-02..2017-06-14
+
+--- rd07 (relative_dates, en) failed: faithfulness
+Q: How many kitchen staff do I need next Saturday?
+A: You need **4 kitchen staff** on Sat 3 Jun. That's the coming Saturday. If you meant Sat 10 Jun, tell me and I'll check that day instead.
+   
+   - The forecast is 138 guests, with a likely range of 129–147.
+   - Your rule is 1 kitchen staff per 35 guests, rounded up, with a minimum of 2.
+   - I only have the staffing figure for the forecast of 138. I haven't checked whether 129 or 147 guests would change the number.
+   
+   Based on: forecast, staffing rules.
+   tool get_today_and_data_range {}
+   tool get_staffing {"date": "2017-06-03", "role": "kitchen"}
+   tool get_forecast {"start_date": "2017-06-03", "end_date": "2017-06-03"}
+   not traced to a tool: [138.0, 129.0, 147.0, 138.0, 129.0, 147.0]
+     {'number': 138.0, 'clause': '- The forecast is 138 guests, with a likely range of 129–147.', 'days': ['2017-06-10']}
+     {'number': 129.0, 'clause': '- The forecast is 138 guests, with a likely range of 129–147.', 'days': ['2017-06-10']}
+     {'number': 147.0, 'clause': '- The forecast is 138 guests, with a likely range of 129–147.', 'days': ['2017-06-10']}
+     {'number': 138.0, 'clause': '- I only have the staffing figure for the forecast of 138.', 'days': ['2017-06-10']}
+     {'number': 129.0, 'clause': "I haven't checked whether 129 or 147 guests would change the number.", 'days': ['2017-06-10']}
+     {'number': 147.0, 'clause': "I haven't checked whether 129 or 147 guests would change the number.", 'days': ['2017-06-10']}
+   note: Asked on Thursday 2017-06-01. "Next Saturday" can mean 2017-06-03 (two days away) or 2017-06-10; both readings are accepted (alt_calls), and the answer should say which date it used.
+
+--- ta01 (trust_accuracy, en) failed: faithfulness
+Q: How accurate has the forecast been so far?
+A: **Backtest (the 8 weeks before the export).** The table shows the average miss in guests per day.
+   
+   | Days ahead | Forecast error | Weekday-average error | Likely range (±) |
+   |---|---|---|---|
+   | 1 | 5.1 | 26.7 | 6.2 |
+   | 3 | 6.8 | 26.7 | 8.8 |
+   | 7 | 7.9 | 26.7 | 11.7 |
+   | 14 | 10.6 | 26.5 | 16.0 |
+   
+   - The forecast is much closer than simply using the usual number for that weekday. It gets less accurate the further ahead you look.
+   - The likely range is set so that 8 in 10 past days fell inside it.
+   
+   **The 14 days after the export (what actually happened):**
+   - The average error was 8.9 guests. The weekday average was off by 19.0.
+   - 64% of days landed inside the likely range. That is lower than the 8 in 10 the range is designed for, so treat the ranges with some caution.
+   
+   Based on: accuracy.
+   tool get_accuracy {}
+   not traced to a tool: [8.0, 10.0]
+     {'number': 8.0, 'clause': '- The likely range is set so that 8 in 10 past days fell inside it.', 'days': []}
+     {'number': 10.0, 'clause': '- The likely range is set so that 8 in 10 past days fell inside it.', 'days': []}
+
+--- ta03 (trust_accuracy, en) failed: faithfulness
+Q: How often does the real number of guests land inside the likely range?
+A: In the 8-week backtest, the likely range is built so that about 8 in 10 past days (80%) land inside it.
+   
+   In the 14 days after the export, the real number landed inside the range on 64% of days. That is lower than 80%, but it is only 14 days, so it is a small sample.
+   
+   The range gets wider the further ahead you look (half-width in guests):
+   - 1 day ahead: ±6.2, with an average error of 5.1 guests
+   - 3 days ahead: ±8.8, with an average error of 6.8 guests
+   - 7 days ahead: ±11.7, with an average error of 7.9 guests
+   - 14 days ahead: ±16.0, with an average error of 10.6 guests
+   
+   For comparison, the plain weekday average is off by about 26.7 guests, so the forecast is much closer.
+   
+   Based on: accuracy backtest.
+   tool get_accuracy {}
+   not traced to a tool: [8.0, 10.0, 80.0, 80.0]
+     {'number': 8.0, 'clause': 'In the 8-week backtest, the likely range is built so that about 8 in 10 past days (80%) land inside it.', 'days': []}
+     {'number': 10.0, 'clause': 'In the 8-week backtest, the likely range is built so that about 8 in 10 past days (80%) land inside it.', 'days': []}
+     {'number': 80.0, 'clause': 'In the 8-week backtest, the likely range is built so that about 8 in 10 past days (80%) land inside it.', 'days': []}
+     {'number': 80.0, 'clause': 'That is lower than 80%, but it is only 14 days, so it is a small sample.', 'days': []}
+FAIL: invented numbers in sd06 [21.7]; dr02 [11.0]; dr05 [2.0]; nl03 [5.0, 15.0]; rd06 [4.0, 15.0]; rd07 [138.0, 129.0, 147.0, 138.0, 129.0, 147.0]; ta01 [8.0, 10.0]; ta03 [8.0, 10.0, 80.0, 80.0]
+##[error]Process completed with exit code 1.
