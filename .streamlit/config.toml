@@ -1,6 +1,53 @@
+# The app's look. Colours here match the ones in app_pages/ui.py; change both together.
+
+[client]
+# No developer menu for visitors. Buttons that Streamlit Community Cloud adds still show.
+toolbarMode = "minimal"
+
+[server]
+# Serves static/ at app/static/: the two font files, so no font is fetched from another site.
+enableStaticServing = true
+
 [theme]
 base = "light"
-primaryColor = "#2a78d6"
-backgroundColor = "#fcfcfb"
-secondaryBackgroundColor = "#f3f2ee"
-textColor = "#0b0b0b"
+primaryColor = "#17705F"
+backgroundColor = "#F4F6F3"
+secondaryBackgroundColor = "#E6ECE8"
+textColor = "#10201D"
+linkColor = "#12564A"
+linkUnderline = true
+borderColor = "#CDD7D2"
+dataframeBorderColor = "#DCE2DE"
+dataframeHeaderBackgroundColor = "#E9EEEB"
+
+font = "Instrument Sans, system-ui, sans-serif"
+headingFont = "Bricolage Grotesque, Instrument Sans, system-ui, sans-serif"
+headingFontSizes = ["2.6rem", "1.9rem", "1.5rem"]
+headingFontWeights = [800, 700, 700]
+baseRadius = "0.6rem"
+buttonRadius = "full"
+# The page starts under the dark header band, which brings its own spacing (see ui.py).
+paddingTop = "0rem"
+paddingBottom = "3rem"
+
+# Notes, confirmations, warnings and errors (st.info, st.success, st.warning, st.error).
+blueBackgroundColor = "#E1EBE7"
+blueTextColor = "#12443C"
+greenBackgroundColor = "#DCEFE6"
+greenTextColor = "#0E4737"
+yellowBackgroundColor = "#FBF0CC"
+yellowTextColor = "#5E4500"
+redBackgroundColor = "#FCE4DA"
+redTextColor = "#84280F"
+
+[[theme.fontFaces]]
+family = "Instrument Sans"
+url = "app/static/fonts/InstrumentSans-latin.woff2"
+weight = "400 700"
+style = "normal"
+
+[[theme.fontFaces]]
+family = "Bricolage Grotesque"
+url = "app/static/fonts/BricolageGrotesque-latin.woff2"
+weight = "200 800"
+style = "normal"

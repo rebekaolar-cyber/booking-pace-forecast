@@ -14,6 +14,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
+from app_pages import ui  # noqa: E402
 from pace import ml  # noqa: E402
 from pace import plan as P  # noqa: E402
 from pace.backtest import TEST, TRAIN, build_rows, summarise  # noqa: E402
@@ -21,10 +22,11 @@ from pace.data import load_hotels  # noqa: E402
 from pace.models import reference_days  # noqa: E402
 
 REPO = "https://github.com/rebekaolar-cyber/booking-pace-forecast"
-BLUE, ORANGE, AQUA, INK, MUTED = "#2a78d6", "#eb6834", "#1baf7a", "#0b0b0b", "#8a8984"
 UNUSUAL = 15  # % away from the usual weekday that counts as worth a look
 
-st.set_page_config(page_title="Guest forecast", page_icon="📅", layout="wide")
+st.set_page_config(page_title="Guest forecast", layout="wide",
+                   page_icon=str(Path(__file__).parent / "static" / "favicon.png"))
+ui.inject_css()
 
 
 # ---------------------------------------------------------------- loading -------------------
@@ -69,18 +71,21 @@ def to_excel(df: pd.DataFrame) -> bytes:
 
 # ---------------------------------------------------------------- page ----------------------
 
-st.title("How many guests are coming?")
-st.caption("A forecast for the next two weeks that reads your reservation book: the usual number "
-           "for each weekday, corrected by how far bookings are running ahead of or behind normal.")
+st.html(ui.hero(REPO))
 
-plan_tab, proof_tab, ask_tab = st.tabs(["📅  Plan the next two weeks", "📊  How accurate is it?",
-                                        "💬  Ask the assistant"])
+plan_tab, proof_tab, ask_tab = st.tabs(["Plan the next two weeks", "How accurate is it?",
+                                        "Ask the assistant"])
+
+
+def day_label(d: pd.Timestamp) -> str:
+    return f"{d:%a} {d.day} {d:%b}"
+
 
 def plan_page():
-    source = st.radio(
+    source = st.segmented_control(
         "Reservations",
         ["Try it with sample data", "Use my own reservations"],
-        horizontal=True,
+        default="Try it with sample data", required=True,
         help="The sample is a real city hotel's bookings, exported as they stood on 31 May 2017.",
     )
 
@@ -89,9 +94,9 @@ def plan_page():
         raw = sample_raw()
         mapping = P.guess_columns(raw.columns)
         dayfirst = True
-        st.info("**Sample:** a real 140-guests-a-day city hotel, with its bookings as they stood on "
-                "**31 May 2017**. Because this is history, the plan also shows what really happened.",
-                icon="ℹ️")
+        st.caption(":material/history: **Sample:** a real 140-guests-a-day city hotel, with its bookings "
+                   "as they stood on **31 May 2017**. Because this is history, the plan also shows what "
+                   "really happened.")
     else:
         with st.expander("What file do I need?", expanded=False):
             st.markdown(
@@ -179,52 +184,108 @@ def plan_page():
         st.warning("No open days found to forecast. Try switching off 'Skip days with no guests'.")
         return
 
-    # ---- headline
+    # ---- headline figures
+    has_actual = "actual" in p
     busiest = open_days.loc[open_days.forecast.idxmax()]
-    unusual = open_days[open_days.vs_usual_pct.abs() >= UNUSUAL]
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric(f"Guests expected, next {days} days", f"{open_days.forecast.sum():,.0f}",
-              delta=f"{open_days.forecast.sum() / open_days.usual.sum() - 1:+.0%} vs a usual {days} days",
-              delta_color="off")
-    k2.metric("Busiest day", f"{busiest.date:%a %d %b}", delta=f"{busiest.forecast:.0f} guests", delta_color="off")
-    k3.metric("Days that need a second look", f"{len(unusual)}",
-              delta=f"{UNUSUAL}%+ away from the usual weekday", delta_color="off")
+    status = p.vs_usual_pct.map(lambda v: ui.day_status(v, UNUSUAL))
+    unusual = open_days[status[open_days.index] != "usual"]
+    total, usual_total = open_days.forecast.sum(), open_days.usual.sum()
+    change = total / usual_total - 1 if usual_total else 0.0
+    if abs(change) < 0.005:
+        against_usual = f"about the same as a usual {days} days"
+    else:
+        against_usual = f"{abs(change):.0%} {'more' if change > 0 else 'fewer'} than a usual {days} days"
+    figures = [
+        (f"{total:,.0f}", f"guests expected in the next {days} days", against_usual),
+        (day_label(busiest.date), "busiest day", f"{busiest.forecast:.0f} guests"),
+        (f"{len(unusual)} day{'' if len(unusual) == 1 else 's'}",
+         "needs a second look" if len(unusual) == 1 else "need a second look",
+         f"{UNUSUAL}% or more away from the usual weekday"),
+    ]
     if len(check):
         row7 = check[check.days_ahead == min(7, check.days_ahead.max())].iloc[0]
-        k4.metric(f"Off by, on your last 8 weeks ({int(row7.days_ahead)} days ahead)",
-                  f"± {row7.pace_error:.0f} guests",
-                  delta=f"weekday average alone: ± {row7.usual_error:.0f}", delta_color="off")
+        figures.append((f"± {row7.pace_error:.0f} guests",
+                        f"average miss on your last 8 weeks, {int(row7.days_ahead)} days ahead",
+                        f"the weekday average alone: ± {row7.usual_error:.0f}"))
+    st.html(ui.stats(figures))
 
-    # ---- chart
+    # ---- the days ahead as a calendar
+    tiles = []
+    for i, r in p.iterrows():
+        tile = {"date": r.date, "closed": bool(r.closed)}
+        if not r.closed:
+            likely = "" if np.isnan(r.low) else f"likely {r.low:.0f} to {r.high:.0f}"
+            came = f"{r.actual:.0f} came" if has_actual and not np.isnan(r.actual) else ""
+            title = [f"Forecast: {r.forecast:.0f} guests", likely.capitalize(),
+                     f"Usual for a {r.date:%A}: {r.usual:.0f}", f"Booked so far: {r.booked:.0f}",
+                     came.replace(" came", " actually came")]
+            tile.update(forecast=r.forecast, usual=r.usual, status=status[i],
+                        vs_usual_pct=r.vs_usual_pct, sub=came or likely,
+                        title=". ".join(t for t in title if t) + ".")
+        tiles.append(tile)
+    st.html(ui.calendar(tiles))
+    st.html(ui.key([
+        ("bar", ui.CALM, "about usual"),
+        ("bar", ui.HOT, f"busier than usual by {UNUSUAL}% or more"),
+        ("bar", ui.COOL, f"quieter by {UNUSUAL}% or more"),
+        ("tick", ui.INK, "line across each bar: the usual for that weekday"),
+    ]))
+
+    # ---- chart: how sure each day is
+    st.subheader("Forecast and likely range")
     c = open_days.copy()
-    c["label"] = c.date.dt.strftime("%a %d %b")
+    c["day"] = c.date.map(day_label)
+    c["label"] = c.date.map(lambda d: f"{d:%a}|{d.day} {d:%b}")  # two lines on the axis
+    c["status"] = status[c.index]
+    c["flag"] = [f"{'↑' if s == 'busier' else '↓'} {abs(v):.0f}%" if s != "usual" else ""
+                 for s, v in zip(c.status, c.vs_usual_pct)]
+    c["label_y"] = c[["forecast", "high", "usual"] + (["actual"] if has_actual else [])].max(axis=1)
     order = list(c.label)
-    base = alt.Chart(c).encode(x=alt.X("label:N", sort=order, title=None, axis=alt.Axis(labelAngle=0)))
-    tooltip = [alt.Tooltip("label:N", title="Day"),
+    # Sizes follow the chart's width, so 7 days on a wide screen and 28 on a phone both fit.
+    band = f"(width / {len(c)})"
+    bar = f"clamp({band} * 0.36, 3, 22)"
+    beside = f"clamp({band} * 0.33, 6, {bar} / 2 + 10)"
+    dot = f"clamp({band} * 1.4, 24, 64)"
+    base = alt.Chart(c).encode(x=alt.X("label:N", sort=order, title=None, axis=alt.Axis(
+        labelAngle=0, labelExpr="split(datum.label, '|')", labelLineHeight=15, ticks=False, labelPadding=8)))
+    tooltip = [alt.Tooltip("day:N", title="Day"),
                alt.Tooltip("forecast:Q", title="Forecast", format=".0f"),
                alt.Tooltip("low:Q", title="Likely from", format=".0f"),
                alt.Tooltip("high:Q", title="Likely to", format=".0f"),
                alt.Tooltip("usual:Q", title="Usual for this weekday", format=".0f"),
                alt.Tooltip("booked:Q", title="Booked so far")]
-    bars = base.mark_bar(color=BLUE, cornerRadiusTopLeft=4, cornerRadiusTopRight=4, size=26).encode(
-        y=alt.Y("forecast:Q", title="Guests"), tooltip=tooltip)
-    rng = base.mark_rule(color=INK, strokeWidth=1.5).encode(y="low:Q", y2="high:Q", tooltip=tooltip)
-    usual = base.mark_tick(color=AQUA, thickness=3, size=30).encode(y="usual:Q", tooltip=tooltip)
-    booked = base.mark_point(color=ORANGE, filled=True, size=70).encode(y="booked:Q", tooltip=tooltip)
-    layers = [bars, rng, usual, booked]
-    if "actual" in c:
-        layers.append(base.mark_point(shape="diamond", color=INK, filled=True, size=70).encode(
-            y="actual:Q", tooltip=tooltip + [alt.Tooltip("actual:Q", title="Actually came")]))
-    st.altair_chart(alt.layer(*layers).properties(height=320), width="stretch")
-    legend = (f"<span style='color:{BLUE}'>■</span> forecast &nbsp; │ likely range (8 in 10 days) &nbsp; "
-              f"<span style='color:{AQUA}'>▬</span> usual for that weekday &nbsp; "
-              f"<span style='color:{ORANGE}'>●</span> booked so far")
-    if "actual" in c:
-        legend += " &nbsp; ◆ what really happened"
-    st.markdown(f"<small>{legend}</small>", unsafe_allow_html=True)
+    if has_actual:
+        tooltip.append(alt.Tooltip("actual:Q", title="Actually came"))
+    layers = [
+        base.mark_bar(size=alt.expr(bar), cornerRadiusTopLeft=4, cornerRadiusTopRight=4).encode(
+            y=alt.Y("forecast:Q", title=None),
+            color=alt.Color("status:N", legend=None,
+                            scale=alt.Scale(domain=list(ui.STATUS), range=list(ui.STATUS.values())))),
+        # Each dark mark sits on a white one a little larger, so it stays visible over a bar.
+        base.mark_tick(color="white", thickness=5, size=alt.expr(f"{bar} + 12")).encode(y="usual:Q"),
+        base.mark_tick(color=ui.INK, thickness=2, size=alt.expr(f"{bar} + 10")).encode(y="usual:Q"),
+        base.mark_rule(color="white", strokeWidth=4.5).encode(y="low:Q", y2="high:Q"),
+        base.mark_rule(color=ui.INK, strokeWidth=1.5).encode(y="low:Q", y2="high:Q"),
+        base.mark_point(shape="circle", filled=True, fill="white", stroke=ui.INK, strokeWidth=1.75,
+                        opacity=1, size=alt.expr(dot), xOffset=alt.expr(f"-{beside}")).encode(y="booked:Q"),
+    ]
+    if has_actual:
+        layers.append(base.mark_point(shape="diamond", filled=True, fill=ui.INK, opacity=1,
+                                      size=alt.expr(f"{dot} * 1.25"), xOffset=alt.expr(beside)).encode(y="actual:Q"))
+    layers.append(base.mark_text(dy=-10, fontSize=12, fontWeight=600, color=ui.INK2).encode(
+        y="label_y:Q", text="flag:N"))
+    # One wide invisible bar per day on top, so the tooltip opens anywhere over that day.
+    layers.append(base.mark_bar(opacity=0, size=alt.expr(f"{band} * 0.96")).encode(
+        y=alt.Y("label_y:Q"), tooltip=tooltip))
+    marks = [("bar", ui.CALM, "forecast"), ("whisker", ui.INK, "likely range (8 in 10 days)"),
+             ("tick", ui.INK, "usual for that weekday"), ("ring", ui.INK, "booked so far")]
+    if has_actual:
+        marks.append(("diamond", ui.INK, "what really happened"))
+    st.html(ui.key(marks))
+    st.altair_chart(ui.polish(alt.layer(*layers), height=330), width="stretch")
 
     # ---- staffing + table
-    st.subheader("Plan")
+    st.subheader("Staffing plan")
     with st.expander("Staffing rules: change these to your own", expanded=False):
         r1, r2 = st.columns([2, 1])
         rules = r1.data_editor(
@@ -244,31 +305,45 @@ def plan_page():
     def flag(r):
         if r.closed:
             return "Closed"
-        if abs(r.vs_usual_pct) >= UNUSUAL:
-            return f"{'▲ busier' if r.vs_usual_pct > 0 else '▼ quieter'} {r.vs_usual_pct:+.0f}%"
+        s = ui.day_status(r.vs_usual_pct, UNUSUAL)
+        if s != "usual":
+            return f"{'↑' if s == 'busier' else '↓'} {abs(r.vs_usual_pct):.0f}% {s}"
         return ""
 
     table = pd.DataFrame({
-        "Date": p.date.dt.strftime("%a %d %b"),
+        "Date": p.date.map(day_label),
         "Booked so far": p.booked,
         "Usual": p.usual.round(),
         "Forecast": p.forecast.round(),
         "Likely range": [("" if np.isnan(lo) else f"{lo:.0f}-{hi:.0f}") for lo, hi in zip(p.low, p.high)],
         "vs usual": p.apply(flag, axis=1),
     })
-    if "actual" in p:
+    if has_actual:
         table["Actually came"] = p.actual
     for col in staff.columns[1:]:
         table[col] = staff[col]
-    st.dataframe(table, hide_index=True, width="stretch", height=35 * (len(table) + 1) + 3,
-                 column_config={"vs usual": st.column_config.TextColumn(width="medium")})
-    left = st.container()
-    d1, d2, _ = left.columns([1, 1, 6])
-    d1.download_button("⬇ Excel", to_excel(table), f"guest_plan_{until:%Y%m%d}.xlsx",
-                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    d2.download_button("⬇ CSV", table.to_csv(index=False).encode(), f"guest_plan_{until:%Y%m%d}.csv", "text/csv")
 
-    if "actual" in p:
+    def flag_colour(v: str) -> str:
+        return ("background-color: #FCE4DA" if v.startswith("↑")
+                else "background-color: #DEEAF7" if v.startswith("↓") else "")
+
+    numbers = [col for col in table.columns if table[col].dtype.kind in "if"]
+    shown = table.style.map(flag_colour, subset=["vs usual"]).format("{:.0f}", subset=numbers, na_rep="")
+    st.dataframe(shown, hide_index=True, width="stretch", height=35 * (len(table) + 1) + 3,
+                 column_config={
+                     "Forecast": st.column_config.ProgressColumn(
+                         format="%d", min_value=0, max_value=float(np.nanmax([p.forecast.max(), 1])),
+                         color=ui.CALM, width="medium"),
+                     "vs usual": st.column_config.TextColumn(width="medium"),
+                 })
+    with st.container(horizontal=True):
+        st.download_button("Download Excel", to_excel(table), f"guest_plan_{until:%Y%m%d}.xlsx",
+                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           icon=":material/download:")
+        st.download_button("Download CSV", table.to_csv(index=False).encode(),
+                           f"guest_plan_{until:%Y%m%d}.csv", "text/csv", icon=":material/download:")
+
+    if has_actual:
         hit = open_days.assign(actual=p.actual).dropna(subset=["actual"])
         mae_p = (hit.forecast - hit.actual).abs().mean()
         mae_u = (hit.usual - hit.actual).abs().mean()
@@ -312,10 +387,18 @@ def backtest():
     return test
 
 
-COLORS = {"Actual guests": INK, "Booking pace (rule)": BLUE,
-          "Gradient boosting (ML)": ORANGE, "Weekday average": AQUA}
-COLUMNS = {"actual": "Actual guests", "pace": "Booking pace (rule)",
-           "gradient_boosting": "Gradient boosting (ML)", "weekday_average": "Weekday average"}
+SERIES = {  # column -> (name, colour, line width, dash, glyph in the key)
+    "weekday_average": ("Weekday average", ui.BASELINE, 1.75, [5, 3], "dash"),
+    "gradient_boosting": ("Gradient boosting (ML)", ui.ML, 1.75, [1, 0], "thin"),
+    "pace": ("Booking pace (rule)", ui.PACE, 2.75, [1, 0], "line"),
+    "actual": ("Actual guests", ui.INK, 2.75, [1, 0], "line"),
+}
+COLUMNS = {column: name for column, (name, *_) in SERIES.items()}
+
+
+def against_baseline(pct: float) -> str:
+    return f"{abs(pct):.0f}% {'lower' if pct >= 0 else 'higher'} than the weekday average"
+
 
 with proof_tab:
     st.markdown(
@@ -325,21 +408,22 @@ with proof_tab:
     )
     test = backtest()
     c1, c2, c3 = st.columns([1.2, 1, 1])
-    hotel = c1.radio("Hotel", ["City Hotel", "Resort Hotel"], horizontal=True)
+    hotel = c1.segmented_control("Hotel", ["City Hotel", "Resort Hotel"], default="City Hotel", required=True)
     horizon = c2.slider("Forecast made … days ahead", 1, 30, 7)
     months = c3.select_slider("Months shown",
                               options=pd.date_range(*TEST, freq="MS").strftime("%b %Y").tolist(),
                               value=("May 2017", "Jun 2017"))
     g = test[(test.hotel == hotel) & (test.horizon == horizon)].copy()
     s = summarise(g).iloc[0]
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Average guests arriving per day", f"{s.average_guests:.0f}")
-    k2.metric("Error: weekday average", f"{s.weekday_average:.1f} guests")
-    k3.metric("Error: booking pace", f"{s.pace:.1f} guests",
-              delta=f"{-s.pace_vs_weekday_pct:.0f}% vs weekday average", delta_color="inverse")
-    k4.metric("Error: gradient boosting", f"{s.gradient_boosting:.1f} guests",
-              delta=f"{-s.ml_vs_weekday_pct:.0f}% vs weekday average", delta_color="inverse")
-    st.caption("Error = mean absolute error over every test day, 1 Mar - 31 Aug 2017. Lower is better.")
+
+    st.subheader("How far off, in guests per day")
+    st.html(ui.error_bars([
+        ("Weekday average", s.weekday_average, ui.BASELINE, "what most managers do by feel"),
+        ("Booking pace (rule)", s.pace, ui.PACE, against_baseline(s.pace_vs_weekday_pct)),
+        ("Gradient boosting (ML)", s.gradient_boosting, ui.ML, against_baseline(s.ml_vs_weekday_pct)),
+    ]))
+    st.caption(f"Mean absolute error over every test day, 1 Mar - 31 Aug 2017. Lower is better. "
+               f"This hotel averages {s.average_guests:.0f} guests arriving per day.")
 
     start = pd.Timestamp(pd.to_datetime(months[0], format="%b %Y"))
     end = pd.Timestamp(pd.to_datetime(months[1], format="%b %Y")) + pd.offsets.MonthEnd(0)
@@ -347,44 +431,50 @@ with proof_tab:
     long = window.melt(id_vars="day", value_vars=list(COLUMNS), var_name="series", value_name="guests")
     long["series"] = long.series.map(COLUMNS)
     long["guests"] = long.guests.round(0)
-    chart = (
-        alt.Chart(long).mark_line(strokeWidth=2).encode(
-            x=alt.X("day:T", title=None),
-            y=alt.Y("guests:Q", title="Guests arriving"),
-            color=alt.Color("series:N", scale=alt.Scale(domain=list(COLORS), range=list(COLORS.values())),
-                            legend=alt.Legend(orient="top", title=None)),
-            strokeDash=alt.condition(alt.datum.series == "Weekday average", alt.value([4, 2]), alt.value([1, 0])),
-            tooltip=[alt.Tooltip("day:T", format="%a %d %b %Y"), "series:N", "guests:Q"],
-        ).properties(height=340).interactive(bind_y=False)
-    )
+    lines = [  # drawn in this order, so the two that matter most end up on top
+        alt.Chart(long[long.series == name]).mark_line(
+            color=colour, strokeWidth=width, strokeDash=dash, strokeJoin="round").encode(
+            x=alt.X("day:T", title=None, axis=alt.Axis(format="%d %b", labelAngle=0, tickCount=10)),
+            y=alt.Y("guests:Q", title=None),
+            tooltip=[alt.Tooltip("day:T", format="%a %d %b %Y"), "series:N", "guests:Q"])
+        for name, colour, width, dash, _ in SERIES.values()
+    ]
     st.subheader("Forecast against what really happened")
-    st.altair_chart(chart, width="stretch")
+    st.html(ui.key([(glyph, colour, name) for name, colour, _, _, glyph in reversed(SERIES.values())]))
+    st.altair_chart(ui.polish(alt.layer(*lines).interactive(bind_y=False), height=340), width="stretch")
 
     st.subheader("Look inside one day")
     g["miss"] = (g.weekday_average - g.actual).abs() - (g.pace - g.actual).abs()
     default_day = g.sort_values("miss").day.iloc[-1].date()
     day = pd.Timestamp(st.date_input("Day", value=default_day, min_value=TEST[0].date(),
-                                     max_value=TEST[1].date()))
+                                     max_value=TEST[1].date(), width=260))
     row = g[g.day == day].iloc[0]
     h = hotels()[hotel]
     refs = reference_days(h, day, horizon)
     ks = np.arange(60, -1, -1)
+    this_day, normal_day = f"{day:%a} {day.day} {day:%b}", f"A normal {day:%A}"
     curve = pd.DataFrame({
         "days_before": -ks,
-        f"{day:%a %d %b}": [h.booked(day, k) for k in ks],
-        f"A normal {day:%A}": [np.mean([h.booked(r, k) for r in refs]) for k in ks],
+        this_day: [h.booked(day, k) for k in ks],
+        normal_day: [np.mean([h.booked(r, k) for r in refs]) for k in ks],
     }).melt(id_vars="days_before", var_name="series", value_name="guests in the book")
+    # Same colours as the plan: orange-red when the book runs ahead of normal, blue when behind.
+    ahead = row.booked_now - row.booked_normally
+    this_colour = ui.HOT if ahead > 0 else ui.COOL if ahead < 0 else ui.CALM
     left, right = st.columns([2, 1])
-    line = alt.Chart(curve).mark_line(strokeWidth=2).encode(
-        x=alt.X("days_before:Q", title="Days before arrival"),
-        y=alt.Y("guests in the book:Q", title="Guests in the reservation book"),
-        color=alt.Color("series:N", scale=alt.Scale(domain=[f"{day:%a %d %b}", f"A normal {day:%A}"],
-                                                    range=[BLUE, MUTED]),
-                        legend=alt.Legend(orient="top", title=None)),
-        tooltip=["series:N", "days_before:Q", alt.Tooltip("guests in the book:Q", format=".0f")],
+    left.html(ui.key([("line", this_colour, this_day), ("thin", ui.BASELINE, normal_day),
+                      ("dash", ui.INK2, "the day the forecast was made")]))
+    tip = ["series:N", alt.Tooltip("days_before:Q", title="days before arrival"),
+           alt.Tooltip("guests in the book:Q", format=".0f")]
+    axes = dict(x=alt.X("days_before:Q", title="Days before arrival", axis=alt.Axis(tickCount=12)),
+                y=alt.Y("guests in the book:Q", title=None))
+    one_day = alt.layer(
+        alt.Chart(curve[curve.series == normal_day]).mark_line(color=ui.BASELINE, strokeWidth=2).encode(tooltip=tip, **axes),
+        alt.Chart(curve[curve.series == this_day]).mark_line(color=this_colour, strokeWidth=3,
+                                                              strokeJoin="round").encode(tooltip=tip, **axes),
+        alt.Chart(pd.DataFrame({"x": [-(horizon - 1)]})).mark_rule(strokeDash=[4, 3], color=ui.INK2).encode(x="x:Q"),
     )
-    rule = alt.Chart(pd.DataFrame({"x": [-(horizon - 1)]})).mark_rule(strokeDash=[2, 2], color="#52514e").encode(x="x:Q")
-    left.altair_chart((line + rule).properties(height=300), width="stretch")
+    left.altair_chart(ui.polish(one_day, height=300), width="stretch")
     right.markdown(
         f"""
 **Standing {horizon} day{'s' if horizon > 1 else ''} before {day:%A %d %B}:**
@@ -437,7 +527,7 @@ with ask_tab:
     st.info("The assistant answers from the **sample hotel's** forecast (export of 31 May 2017, so "
             "**today is Thursday 1 June 2017**) with the default staffing rules. Every number it "
             "gives comes from the same tools as the Plan tab; it never sees your uploaded file.",
-            icon="ℹ️")
+            icon=":material/info:")
     render_assistant(sample_backend())
 
-st.caption(f"Built by Rebeka Olar · [GitHub]({REPO}) · Your file is processed in memory and not saved.")
+st.html(ui.footer(REPO))

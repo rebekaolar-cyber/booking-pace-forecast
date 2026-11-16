@@ -28,6 +28,7 @@ EXAMPLE_QUESTIONS = [
 DAILY_LIMIT_NOTE = ("The demo has answered all the questions it can for today. "
                     "Please come back tomorrow.")
 HISTORY_KEY = "assistant_history"  # prefixed so it can't clash with the main app's state
+AVATARS = {"user": ":material/person:", "assistant": ":material/room_service:"}
 
 
 def _api_key() -> str | None:
@@ -96,9 +97,9 @@ def _show_details(result) -> None:
 
 
 def _show_turn(question: str, result) -> None:
-    with st.chat_message("user"):
+    with st.chat_message("user", avatar=AVATARS["user"]):
         st.markdown(question)
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar=AVATARS["assistant"]):
         st.markdown(result.answer)
         _show_details(result)
 
@@ -125,10 +126,10 @@ def render(backend) -> None:
     disabled = not api_key or session_limit or daily_limit
 
     question = None
-    columns = st.columns(len(EXAMPLE_QUESTIONS))
-    for column, example in zip(columns, EXAMPLE_QUESTIONS):
-        if column.button(example, disabled=disabled):
-            question = example
+    with st.container(horizontal=True):
+        for example in EXAMPLE_QUESTIONS:
+            if st.button(example, disabled=disabled):
+                question = example
 
     for past_question, past_result in history:
         _show_turn(past_question, past_result)
@@ -144,9 +145,9 @@ def render(backend) -> None:
 
     # Earlier turns give follow-ups like "and Sunday?" their context; the loop keeps the last 4.
     earlier = [{"question": q, "answer": r.answer} for q, r in history if r.stop_reason != "error"]
-    with st.chat_message("user"):
+    with st.chat_message("user", avatar=AVATARS["user"]):
         st.markdown(question)
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar=AVATARS["assistant"]):
         with st.spinner("Checking the forecast..."):
             result = answer(question, backend, client=_client(api_key), history=earlier)
         log_run(result)
