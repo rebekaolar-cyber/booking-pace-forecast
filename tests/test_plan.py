@@ -90,6 +90,43 @@ def test_self_check_rebuilds_the_past_book():
     assert (chk.pace_error == 0).all()              # a perfectly regular place is forecast perfectly
 
 
+def _plan_for(days):
+    """A small plan: Thu 19, Fri 20, Sat 21, Sun 22, Mon 23 Nov 2026, the Monday closed."""
+    dates = pd.date_range("2026-11-19", periods=days)
+    return pd.DataFrame({"date": dates, "closed": [d.weekday() == 0 for d in dates],
+                         "forecast": 60.0, "low": 48.0, "high": 72.0, "usual": 54.0, "booked": 30})
+
+
+def test_walk_ins_are_a_share_of_all_guests_40_on_fri_to_sun_20_on_weekdays():
+    p = P.add_walk_ins(_plan_for(5))
+    p.index = p.date.dt.day_name()
+    assert p.loc["Thursday", "forecast"] == pytest.approx(75)        # 60 / 0.8
+    assert p.loc["Thursday", "walk_ins"] == pytest.approx(15)
+    for day in ("Friday", "Saturday", "Sunday"):
+        assert p.loc[day, "forecast"] == pytest.approx(100)          # 60 / 0.6
+        assert p.loc[day, "walk_ins"] == pytest.approx(40)
+        assert p.loc[day, "reserved"] == 60 and p.loc[day, "booked"] == 30   # the book is untouched
+        assert p.loc[day, "low"] == pytest.approx(80) and p.loc[day, "high"] == pytest.approx(120)
+    assert p.loc["Monday", "forecast"] == 60 and pd.isna(p.loc["Monday", "walk_in_share"])  # closed
+
+
+def test_walk_ins_keep_the_vs_usual_comparison_and_take_custom_shares():
+    p = _plan_for(2)
+    p["vs_usual_pct"] = 100 * (p.forecast / p.usual - 1)
+    out = P.add_walk_ins(p, weekend_share=0.5, weekday_share=0.0)
+    assert out.forecast.tolist() == pytest.approx([60, 120])         # Thu unchanged, Fri doubled
+    assert (out.forecast / out.usual).tolist() == pytest.approx((p.forecast / p.usual).tolist())
+    with pytest.raises(ValueError):
+        P.add_walk_ins(p, weekend_share=1.0)
+
+
+def test_walk_in_rows_in_the_export_are_detected():
+    raw = pd.DataFrame({"Status": ["Booked", "Walk-in"]})
+    assert P.has_walk_in_rows(raw, {"status": "Status"})
+    assert not P.has_walk_in_rows(raw.iloc[:1], {"status": "Status"})
+    assert not P.has_walk_in_rows(raw, {"status": None})
+
+
 def test_staffing_rounds_up_and_respects_the_minimum():
     p = pd.DataFrame({"date": [D("2026-01-01"), D("2026-01-02"), D("2026-01-03")],
                       "forecast": [10.0, 51.0, 0.0], "closed": [False, False, True]})

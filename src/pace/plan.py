@@ -163,6 +163,45 @@ def plan(book: Hotel, until: pd.Timestamp, days: int = 14, skip_closed: bool = T
     return pd.DataFrame(rows)
 
 
+WEEKEND = (4, 5, 6)  # Fri, Sat, Sun: in a restaurant, Friday night behaves like the weekend
+WALK_IN_SHARE = {"weekend": 0.40, "weekday": 0.20}  # share of ALL guests who walk in, no booking
+_WALK_IN = re.compile(r"walk", re.I)
+
+
+def has_walk_in_rows(raw: pd.DataFrame, mapping: dict[str, str | None]) -> bool:
+    """True when the export's status column marks walk-ins, so they are already in the data."""
+    col = mapping.get("status")
+    return bool(col) and raw[col].astype(str).str.contains(_WALK_IN).any()
+
+
+def add_walk_ins(p: pd.DataFrame, weekend_share: float = WALK_IN_SHARE["weekend"],
+                 weekday_share: float = WALK_IN_SHARE["weekday"]) -> pd.DataFrame:
+    """Turn a forecast of reserved guests into a forecast of all guests, walk-ins included.
+
+    A share is the part of a day's guests who walk in without booking: 40% means that if 60 guests
+    reserved, they are 60% of the day, so 100 come in total (60 / (1 - 0.4)) and 40 walk in. The
+    forecast, its likely range and the usual for the weekday are all scaled the same way, so the
+    "vs usual" percentage doesn't change. `booked` stays what is actually in the book.
+    Columns added: `reserved` (the forecast before walk-ins), `walk_ins` and `walk_in_share`.
+    """
+    for s in (weekend_share, weekday_share):
+        if not 0 <= s < 1:
+            raise ValueError("A walk-in share must be at least 0% and below 100%.")
+    out = p.copy()
+    share = np.where(out.date.dt.day_of_week.isin(WEEKEND), weekend_share, weekday_share)
+    open_ = ~out.closed.astype(bool)
+    factor = np.where(open_, 1 / (1 - share), 1.0)  # closed days stay as they are
+    out["walk_in_share"] = np.where(open_, share, np.nan)
+    if "forecast" not in out:  # every day closed
+        return out
+    out["reserved"] = out.forecast
+    for col in ("forecast", "low", "high", "usual"):
+        if col in out:
+            out[col] = out[col] * factor
+    out["walk_ins"] = out.forecast - out.reserved
+    return out
+
+
 def self_check(prep: Prepared, until: pd.Timestamp, actual: pd.Series | None = None, weeks: int = 8,
                horizons=range(1, 15), skip_closed: bool = True) -> pd.DataFrame:
     """Replay the last `weeks` weeks before the export day on the user's own data.
