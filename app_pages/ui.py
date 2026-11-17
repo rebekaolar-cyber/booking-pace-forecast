@@ -78,6 +78,13 @@ h2, h3 {{ font-variation-settings:"wdth" 86; letter-spacing:-0.005em; }}
 .gf-hero a {{ color:var(--gf-paper); text-underline-offset:3px; }}
 .gf-hero a:hover {{ color:#FFB59C; }}
 .gf-hero a:focus-visible {{ outline:2px solid #FFB59C; outline-offset:3px; border-radius:2px; }}
+.gf-cta {{ margin-top:1.3rem !important; }}
+.gf-hero a.gf-code {{
+  display:inline-block; padding:.6rem 1.25rem; border-radius:999px; background:var(--gf-paper);
+  color:var(--gf-band); font-weight:650; line-height:1.2; text-decoration:none;
+}}
+.gf-hero a.gf-code:hover {{ background:#FFB59C; color:var(--gf-band); }}
+.gf-hero a.gf-code:focus-visible {{ border-radius:999px; }}
 .gf-story {{ margin:0; }}
 .gf-plot {{ position:relative; max-width:35rem; container-type:inline-size; }}
 .gf-plot img {{ width:100%; height:auto; display:block; }}
@@ -271,8 +278,8 @@ def hero(repo: str) -> str:
   <div>
     <h1>How many guests are coming?</h1>
     <p class="gf-lede">A forecast for the next two weeks that reads your reservation book: the usual
-    number for each weekday, corrected by how far bookings are running ahead of or behind normal.
-    <a href="{escape(repo)}">Code and tests on GitHub</a></p>
+    number for each weekday, corrected by how far bookings are running ahead of or behind normal.</p>
+    <p class="gf-cta"><a class="gf-code" href="{escape(repo)}" target="_blank" rel="noopener">Code on GitHub</a></p>
   </div>
   <figure class="gf-story">{_story_plot()}
     <p class="gf-caption">A week ahead of <b>Friday 28 April 2017</b>, one hotel's book held
@@ -361,7 +368,7 @@ def error_bars(rows: list[tuple[str, float, str, str]]) -> str:
 
 def footer(repo: str) -> str:
     return (f'<footer class="gf-foot">Built by Rebeka Olar. '
-            f'<a href="{escape(repo)}">Code and tests on GitHub</a>. '
+            f'<a href="{escape(repo)}" target="_blank" rel="noopener">Code and tests on GitHub</a>. '
             'Your file is processed in memory and not saved.</footer>')
 
 

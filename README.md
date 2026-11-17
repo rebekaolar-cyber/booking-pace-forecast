@@ -313,7 +313,7 @@ cd booking-pace-forecast
 pip install -r requirements.txt -r requirements-agent.txt -r requirements-dev.txt
 
 streamlit run streamlit_app.py           # the app, three tabs
-python -m pytest -q                      # 440 tests, none of them calls the API
+python -m pytest -q                      # 444 tests, none of them calls the API
 PYTHONPATH=src python -m pace.backtest   # rebuilds reports/results.md
 PYTHONPATH=src python -m pace.charts     # redraws the charts
 ```
