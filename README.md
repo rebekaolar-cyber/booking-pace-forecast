@@ -187,7 +187,12 @@ warnings on the run, to check by hand, because the scorer still has the false al
    `Aangemaakt op`, `Geannuleerd op`), with commas or semicolons, with or without times. Statuses
    like *cancelled / geannuleerd* and *no-show / niet verschenen* are understood. Anything it
    can't place, you pick from a dropdown.
-3. **Read the plan.** For each day: booked so far, the usual for that weekday, the forecast, a
+3. **Say what kind of place it is.** A hotel's guests nearly all book ahead. A restaurant also gets
+   walk-ins, so the app adds an estimate on top of the reservations: by default walk-ins are 40% of
+   all guests on Friday to Sunday and 20% Monday to Thursday, and you can change both. At 40%, 60
+   guests expected from reservations become 100 in total. If your file already lists walk-ins, or
+   you upload real daily totals from your till, nothing is added.
+4. **Read the plan.** For each day: booked so far, the usual for that weekday, the forecast, a
    likely range, a flag on days 15% or more busier or quieter than usual, and staff per role from
    your own rules. Download it as Excel or CSV.
 
@@ -286,6 +291,9 @@ booking curve behind the number.
 - **These are hotels, not restaurants.** Hotel guests book further ahead and rarely walk in, so
   the 1-day gain is bigger than a restaurant with walk-ins would see. The 7- and 14-day numbers are
   the fairer comparison.
+- **The restaurant walk-in estimate is a fixed share, not a forecast.** The 40% and 20% defaults are
+  assumptions, not measured here, and the likely range only covers the reservations part. Real
+  daily totals from the till replace the estimate with what really happened.
 - **Two hotels, one country, 2015-2017.** The method transfers; the exact percentages may not.
 - **Arrivals, not occupancy.** The target is guests arriving per day, the closest match to covers
   per evening in a restaurant.

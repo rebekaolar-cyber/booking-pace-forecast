@@ -81,6 +81,31 @@ def day_label(d: pd.Timestamp) -> str:
     return f"{d:%a} {d.day} {d:%b}"
 
 
+def walk_in_settings(raw: pd.DataFrame, mapping: dict, has_till: bool):
+    """The restaurant's walk-in estimate: (weekend share, weekday share) of all guests, or None."""
+    with st.expander("Walk-ins", expanded=True):
+        if has_till:
+            st.caption(":material/check: Your till totals already include walk-ins, so none are "
+                       "added on top of the forecast.")
+            return None
+        in_file = P.has_walk_in_rows(raw, mapping)
+        add = st.toggle("Add walk-ins on top of the reservations", value=not in_file, key="walk_in_on",
+                        help="Switch off if your file already lists every walk-in.")
+        if in_file:
+            st.caption("Your file has rows marked as walk-ins, so they are probably counted already.")
+        if not add:
+            return None
+        c1, c2 = st.columns(2)
+        weekend = c1.number_input("Walk-ins on Fri, Sat and Sun (% of all guests)", 0, 90,
+                                  round(100 * P.WALK_IN_SHARE["weekend"]), step=5, key="walk_in_weekend")
+        weekday = c2.number_input("Walk-ins Monday to Thursday (% of all guests)", 0, 90,
+                                  round(100 * P.WALK_IN_SHARE["weekday"]), step=5, key="walk_in_weekday")
+        st.caption("40% means 4 in 10 guests walk in without booking: a Saturday with 60 guests "
+                   "expected from reservations becomes 100 guests, 40 of them walk-ins. Change the "
+                   "numbers to what you see at your place.")
+        return weekend / 100, weekday / 100
+
+
 def plan_page():
     source = st.segmented_control(
         "Reservations",
@@ -90,6 +115,7 @@ def plan_page():
     )
 
     actual = None
+    walk_in = None  # (weekend share, weekday share) of all guests, when walk-ins are added on top
     if source == "Try it with sample data":
         raw = sample_raw()
         mapping = P.guess_columns(raw.columns)
@@ -98,6 +124,10 @@ def plan_page():
                    "as they stood on **31 May 2017**. Because this is history, the plan also shows what "
                    "really happened.")
     else:
+        kind = st.segmented_control(
+            "What kind of place?", ["Restaurant", "Hotel"], default="Restaurant", required=True,
+            help="Hotel guests almost all book ahead. In a restaurant many guests walk in, so the "
+                 "plan adds an estimate for them on top of the reservations.")
         with st.expander("What file do I need?", expanded=False):
             st.markdown(
                 "Export your reservations from your booking system (TheFork, Zenchef, Resengo, "
@@ -109,8 +139,9 @@ def plan_page():
                 "| Day the reservation was made | yes | 01-11-2026 |\n"
                 "| Day it was cancelled | better | 12-11-2026 |\n"
                 "| Status (booked, cancelled, no-show, walk-in) | better | Cancelled |\n\n"
-                "Walk-ins: add them as reservations made on the day itself, or upload your daily "
-                "guest totals from the till below. **Leave out names, phone numbers and e-mails**: "
+                "Walk-ins: add them as reservations made on the day itself, upload your daily "
+                "guest totals from the till below, or let the app estimate them (restaurants: "
+                "40% of guests on Fri-Sun, 20% Mon-Thu, which you can change). **Leave out names, phone numbers and e-mails**: "
                 "they aren't needed, and this app doesn't save your file anywhere."
             )
             st.download_button("Download a template", P.TEMPLATE.to_csv(index=False).encode(),
@@ -145,6 +176,8 @@ def plan_page():
                 dcol = c1.selectbox("Date column", list(t.columns), key="till_d")
                 gcol = c2.selectbox("Guests column", list(t.columns), index=min(1, len(t.columns) - 1), key="till_g")
                 actual = P.daily_totals(t, dcol, gcol, dayfirst)
+        if kind == "Restaurant":
+            walk_in = walk_in_settings(raw, mapping, has_till=actual is not None)
 
     try:
         prep = P.prepare(raw, mapping, dayfirst)
@@ -173,8 +206,13 @@ def plan_page():
     p, check = run_plan(res, until, None if actual is None else actual, days, skip_closed)
     if source.startswith("Try"):
         p["actual"] = p.date.map(sample_actual())
+    if walk_in:
+        p = P.add_walk_ins(p, *walk_in)
+    has_walk_ins = "walk_ins" in p
 
     notes = [f"{len(res):,} reservations read"]
+    if has_walk_ins:
+        notes.append(f"walk-ins added: {walk_in[0]:.0%} of guests Fri-Sun, {walk_in[1]:.0%} Mon-Thu")
     if prep.dropped:
         notes.append(f"{prep.dropped:,} rows skipped (no readable date or no guests)")
     st.caption(" · ".join(notes + prep.notes))
@@ -205,7 +243,8 @@ def plan_page():
     if len(check):
         row7 = check[check.days_ahead == min(7, check.days_ahead.max())].iloc[0]
         figures.append((f"± {row7.pace_error:.0f} guests",
-                        f"average miss on your last 8 weeks, {int(row7.days_ahead)} days ahead",
+                        f"average miss on your {'reservations, ' if has_walk_ins else ''}last 8 weeks, "
+                        f"{int(row7.days_ahead)} days ahead",
                         f"the weekday average alone: ± {row7.usual_error:.0f}"))
     st.html(ui.stats(figures))
 
@@ -219,6 +258,8 @@ def plan_page():
             title = [f"Forecast: {r.forecast:.0f} guests", likely.capitalize(),
                      f"Usual for a {r.date:%A}: {r.usual:.0f}", f"Booked so far: {r.booked:.0f}",
                      came.replace(" came", " actually came")]
+            if has_walk_ins:
+                title.insert(1, f"{r.reserved:.0f} from reservations, about {r.walk_ins:.0f} walk-ins")
             tile.update(forecast=r.forecast, usual=r.usual, status=status[i],
                         vs_usual_pct=r.vs_usual_pct, sub=came or likely,
                         title=". ".join(t for t in title if t) + ".")
@@ -254,6 +295,9 @@ def plan_page():
                alt.Tooltip("high:Q", title="Likely to", format=".0f"),
                alt.Tooltip("usual:Q", title="Usual for this weekday", format=".0f"),
                alt.Tooltip("booked:Q", title="Booked so far")]
+    if has_walk_ins:
+        tooltip[2:2] = [alt.Tooltip("reserved:Q", title="From reservations", format=".0f"),
+                        alt.Tooltip("walk_ins:Q", title="Walk-ins (estimate)", format=".0f")]
     if has_actual:
         tooltip.append(alt.Tooltip("actual:Q", title="Actually came"))
     layers = [
@@ -314,6 +358,8 @@ def plan_page():
         "Date": p.date.map(day_label),
         "Booked so far": p.booked,
         "Usual": p.usual.round(),
+        **({"From reservations": p.reserved.round(), "Walk-ins (estimate)": p.walk_ins.round()}
+           if has_walk_ins else {}),
         "Forecast": p.forecast.round(),
         "Likely range": [("" if np.isnan(lo) else f"{lo:.0f}-{hi:.0f}") for lo, hi in zip(p.low, p.high)],
         "vs usual": p.apply(flag, axis=1),
@@ -363,6 +409,9 @@ def plan_page():
             st.dataframe(ch, hide_index=True)
             st.caption("Replayed on your last 8 weeks: for each past day the reservation book is rebuilt "
                        "as it stood back then, so the check never uses information it couldn't have had.")
+            if has_walk_ins:
+                st.caption("This checks the reservations part only. The walk-in estimate can't be "
+                           "checked without real guest totals: upload them from your till to replace it.")
         else:
             st.write("Not enough history yet to check (needs about 10 weeks).")
 
