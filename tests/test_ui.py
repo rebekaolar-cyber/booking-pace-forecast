@@ -74,3 +74,11 @@ def test_text_from_a_file_cannot_inject_html():
 def test_error_bars_are_in_proportion():
     html = ui.error_bars([("Weekday average", 20.0, ui.BASELINE, ""), ("Booking pace", 5.0, ui.PACE, "")])
     assert "width:100.0%" in html and "width:25.0%" in html
+
+
+def test_the_header_has_a_button_to_the_code():
+    """A hosted app can run inside a frame, where a link to GitHub only works in a new tab."""
+    html = ui.hero("https://github.com/example/repo")
+    assert 'class="gf-code" href="https://github.com/example/repo" target="_blank"' in html
+    assert ">Code on GitHub</a>" in html
+    assert 'target="_blank"' in ui.footer("https://github.com/example/repo")
