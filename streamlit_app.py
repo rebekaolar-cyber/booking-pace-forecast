@@ -574,6 +574,25 @@ with proof_tab:
         "zes maanden die de modellen nooit gezien hebben. Elke voorspelling gebruikt alleen boekingen "
         "die bestonden op de ochtend dat ze gemaakt werd."
     ))
+    st.html(ui.methods([
+        (ui.BASELINE, COLUMNS["weekday_average"],
+         tr("The average of the last six weeks for that weekday. What most managers do by feel.",
+            "Het gemiddelde van de laatste zes weken voor die weekdag. Wat de meeste managers op gevoel doen.")),
+        (ui.PACE, COLUMNS["pace"],
+         tr("Starts from the weekday average, then looks at the reservation book: if this Friday has more "
+            "bookings than a normal Friday at the same point, it goes up, and down if it has fewer. "
+            "This is the forecast the Plan tab uses.",
+            "Begint bij het weekdaggemiddelde en kijkt dan in het reserveringsboek: heeft deze vrijdag meer "
+            "boekingen dan een normale vrijdag op hetzelfde moment, dan gaat hij omhoog, bij minder omlaag. "
+            "Dit is de voorspelling die het tabblad Plan gebruikt.")),
+        (ui.ML, COLUMNS["gradient_boosting"],
+         tr("A machine-learning model trained on eight months of earlier days. It sees the same bookings, "
+            "plus the month and last year's number. It is here as a check: does a complex model beat the "
+            "simple rule?",
+            "Een machine-learningmodel, getraind op acht maanden eerdere dagen. Het ziet dezelfde boekingen, "
+            "plus de maand en het getal van vorig jaar. Het staat hier als controle: verslaat een complex "
+            "model de eenvoudige regel?")),
+    ]))
     with st.spinner(tr("Replaying six months of forecasts…", "Zes maanden aan voorspellingen naspelen…")):
         test = backtest()
     c1, c2, c3 = st.columns([1.2, 1, 1])
@@ -596,6 +615,24 @@ with proof_tab:
         (COLUMNS["pace"], s.pace, ui.PACE, against_baseline(s.pace_vs_weekday_pct)),
         (COLUMNS["gradient_boosting"], s.gradient_boosting, ui.ML, against_baseline(s.ml_vs_weekday_pct)),
     ]))
+    if s.pace <= s.gradient_boosting:
+        verdict = tr(f"**{horizon} day{'s' if horizon > 1 else ''} ahead, the simple rule is at least as "
+                     f"accurate as machine learning**, and every number it gives can be explained in one "
+                     f"sentence. That's why the Plan tab uses it.",
+                     f"**{horizon} {'dagen' if horizon > 1 else 'dag'} vooruit is de eenvoudige regel minstens "
+                     f"zo nauwkeurig als machine learning**, en elk getal ervan is in één zin uit te leggen. "
+                     f"Daarom gebruikt het tabblad Plan de regel.")
+    else:
+        ml_nl, pace_nl = f"{s.gradient_boosting:.1f}".replace(".", ","), f"{s.pace:.1f}".replace(".", ",")
+        verdict = tr(f"**{horizon} days ahead, machine learning is a little more accurate** "
+                     f"({s.gradient_boosting:.1f} against {s.pace:.1f} guests off). The bookings for those days "
+                     f"are still thin, so a model that also knows the month and last year's number helps. "
+                     f"Up to a week ahead the simple rule wins.",
+                     f"**{horizon} dagen vooruit is machine learning iets nauwkeuriger** "
+                     f"({ml_nl} tegen {pace_nl} gasten ernaast). Voor die dagen staan er nog weinig boekingen "
+                     f"in het boek, dus een model dat ook de maand en het getal van vorig jaar kent, helpt. "
+                     f"Tot een week vooruit wint de eenvoudige regel.")
+    st.markdown(verdict)
     st.caption(tr(f"Mean absolute error over every test day, 1 Mar - 31 Aug 2017. Lower is better. "
                   f"This hotel averages {s.average_guests:.0f} guests arriving per day.",
                   f"Gemiddelde absolute fout over elke testdag, 1 mrt - 31 aug 2017. Lager is beter. "
@@ -618,6 +655,10 @@ with proof_tab:
         for name, colour, width, dash, _ in SERIES.values()
     ]
     st.subheader(tr("Forecast against what really happened", "Voorspelling tegenover wat er echt gebeurde"))
+    st.caption(tr("The black line is how many guests really arrived each day. The closer a line stays to it, "
+                  "the better that forecast. Hover over a day to see the numbers.",
+                  "De zwarte lijn is hoeveel gasten er echt kwamen per dag. Hoe dichter een lijn erbij blijft, "
+                  "hoe beter die voorspelling. Ga met de muis over een dag om de getallen te zien."))
     st.html(ui.key([(glyph, colour, name) for name, colour, _, _, glyph in reversed(SERIES.values())]))
     st.altair_chart(ui.polish(alt.layer(*lines).interactive(bind_y=False), height=340), width="stretch")
 
