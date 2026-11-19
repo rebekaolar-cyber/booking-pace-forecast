@@ -573,6 +573,15 @@ class _Scanner:
                     and not re.search(r"(?:est|ste)$", nxt):
                 dates = sorted(d for d in ctx.run_dates if d.day == int(m[1]))
             self._take(m.start(), m.end(), dates)
+        # "Fri 23", "Sunday 25": a weekday and a day of the month with no month. A date only
+        # when exactly one day the tools returned has that weekday and that day of the month.
+        wd_names = {**{k.lower(): v for k, v in _WEEKDAY_ABBR.items()}, **_WEEKDAYS}
+        wd_alt = "|".join(sorted(wd_names, key=len, reverse=True))
+        for m in self._scan(rf"\b(?P<wd>{wd_alt})\.?\s+(?P<d>\d{{1,2}})(?![\d.,:%]|\s*(?:{_MONTHS})\b)"):
+            wd, d = wd_names[m["wd"].lower()], int(m["d"])
+            match = [x for x in ctx.run_dates if x.day == d and x.weekday() == wd]
+            if len(match) == 1 and not self._quantity_after(m.end()):
+                self._take(m.start("d"), m.end("d"), match)
         for m in self._scan(r"\b(?:week|wk|weeknummer)\s*(?:nr\.?\s*|no\.?\s*|#)?\d{1,2}\b"):
             self._take(m.start(), m.end())  # week 23
         for m in self._scan(r"(?<!\d )\b(?:in|over)\s+(\d{1,2})\s+(?:days|dagen)\b"):  # in 10 days

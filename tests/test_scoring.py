@@ -822,3 +822,13 @@ def test_eight_in_ten_past_days_within_the_range_is_the_definition():
                   "In the 14 days after the export, 8 in 10 of those past days landed within ±16 guests.",
                   "Of the previous days, 80% landed within the likely range."]:
         assert not scoring.faithfulness(make_any(claim, [acc]))["ok"], claim  # claims to check
+
+
+@pytest.mark.parametrize("answer, grounded", [
+    ("Fri 23 is the clearest quiet day, and Sun 25 is the busy day.", True),   # dr07, 19 Nov
+    ("Friday 23 is quiet.", True),
+    ("Fri 24 is quiet.", False),          # 24 June is a Saturday: not a date, an untraced 24
+    ("Saturday 30 guests are booked.", False),  # a quantity, not a day
+])
+def test_weekday_with_a_day_number_is_a_date(answer, grounded):
+    assert scoring.faithfulness(make_any(answer, DR07_DAYS))["ok"] is grounded, answer
