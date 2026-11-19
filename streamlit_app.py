@@ -2,6 +2,7 @@
 
 Run locally:  streamlit run streamlit_app.py
 """
+import hashlib
 import io
 import sys
 from pathlib import Path
@@ -25,6 +26,7 @@ from pace.models import reference_days  # noqa: E402
 
 REPO = "https://github.com/rebekaolar-cyber/booking-pace-forecast"
 UNUSUAL = 15  # % away from the usual weekday that counts as worth a look
+OWN_DATA_KEY = "own_data_for_assistant"  # what the Plan tab used on an upload, for the assistant tab
 
 st.set_page_config(page_title=tr("Guest forecast", "Gastenvoorspelling"), layout="wide",
                    page_icon=str(Path(__file__).parent / "static" / "favicon.png"))
@@ -136,7 +138,9 @@ def plan_page():
 
     actual = None
     walk_in = None  # (weekend share, weekday share) of all guests, when walk-ins are added on top
+    file_ids: tuple = ()  # the uploads behind this plan, so the assistant knows when they change
     if source == "sample":
+        st.session_state.pop(OWN_DATA_KEY, None)  # the assistant goes back to the sample hotel
         raw = sample_raw()
         mapping = P.guess_columns(raw.columns)
         dayfirst = True
@@ -190,7 +194,9 @@ def plan_page():
         up = st.file_uploader(tr("Your reservations (CSV or Excel)", "Je reserveringen (CSV of Excel)"),
                               type=["csv", "txt", "xlsx", "xls"], key="upload")
         if up is None:
+            st.session_state.pop(OWN_DATA_KEY, None)
             return
+        file_ids = (up.file_id,)
         try:
             raw = read_table(up.getvalue(), up.name)
         except Exception as e:  # noqa: BLE001
@@ -217,6 +223,7 @@ def plan_page():
                                        "Dagtotalen (één rij per dag: datum, gasten)"),
                                     type=["csv", "txt", "xlsx", "xls"], key="till")
             if till is not None:
+                file_ids += (till.file_id,)
                 t = read_table(till.getvalue(), till.name)
                 c1, c2 = st.columns(2)
                 dcol = c1.selectbox(tr("Date column", "Datumkolom"), list(t.columns), key="till_d")
@@ -440,6 +447,15 @@ def plan_page():
                                     "Plan voor de bovenkant als te weinig mensen je meer kost dan één "
                                     "persoon extra."))
     staff = P.staffing(p.assign(high=p.high.fillna(p.forecast)), rules, use=staff_on)
+    if source == "own":  # hand the same inputs to the assistant tab, so it answers about this file
+        settings = (file_ids, sorted(mapping.items(), key=str), dayfirst, str(until.date()), skip_closed,
+                    walk_in, rules.to_json())
+        st.session_state[OWN_DATA_KEY] = {
+            "signature": hashlib.sha256(repr(settings).encode()).hexdigest()[:12], "until": until,
+            "backend_args": dict(raw_export=raw, export_day=until, rules=rules.copy(), actual=actual,
+                                 dayfirst=dayfirst, skip_closed=skip_closed, mapping=dict(mapping),
+                                 walk_in=walk_in),
+        }
 
     words = {"busier": tr("busier", "drukker"), "quieter": tr("quieter", "rustiger")}
 
@@ -771,17 +787,51 @@ def sample_backend():
     return RealBackend()
 
 
+def own_backend(own: dict):
+    """The assistant's tools on this visitor's upload. Kept in their session (never shared with
+    other visitors) and rebuilt only when the file or a Plan-tab setting changes."""
+    from agent.real_backend import RealBackend
+    cached = st.session_state.get("own_backend")
+    if cached is None or cached[0] != own["signature"]:
+        cached = (own["signature"], RealBackend(**own["backend_args"]))
+        st.session_state["own_backend"] = cached
+    return cached[1]
+
+
 with ask_tab:
+    from app_pages.assistant import HISTORY_KEY
     from app_pages.assistant import render as render_assistant
 
-    st.info(tr("The assistant answers from the **sample hotel's** forecast (export of 31 May 2017, so "
-               "**today is Thursday 1 June 2017**) with the default staffing rules. Every number it "
-               "gives comes from the same tools as the Plan tab; it never sees your uploaded file.",
-               "De assistent antwoordt vanuit de voorspelling van het **voorbeeldhotel** (export van "
-               "31 mei 2017, dus **vandaag is donderdag 1 juni 2017**) met de standaard personeelsregels. "
-               "Elk getal komt uit dezelfde hulpmiddelen als het tabblad Plan; je geüploade bestand "
-               "ziet de assistent nooit."),
-            icon=":material/info:")
-    render_assistant(sample_backend())
+    own = st.session_state.get(OWN_DATA_KEY)
+    about = "sample"
+    if own:
+        choices = {"own": tr("My reservations", "Mijn reserveringen"),
+                   "sample": tr("The sample hotel", "Het voorbeeldhotel")}
+        about = st.segmented_control(tr("Answer about", "Antwoord over"), list(choices),
+                                     format_func=choices.get, default="own", required=True, key="ask_about")
+    if about == "own":
+        today = own["until"] + pd.Timedelta(days=1)
+        exported = f"{own['until'].day} {T.month_name(own['until'])} {own['until'].year}"
+        st.info(tr(f"The assistant answers from **your own reservations**, with the settings from the Plan "
+                   f"tab (export of {exported}, so **today is {T.long_date(today)}**). It looks up the "
+                   f"forecast numbers it needs, and only those numbers go to the AI model; your file itself "
+                   f"stays in this browser session and is never saved.",
+                   f"De assistent antwoordt vanuit **je eigen reserveringen**, met de instellingen van het "
+                   f"tabblad Plan (export van {exported}, dus **vandaag is {T.long_date(today)}**). Hij zoekt "
+                   f"de voorspellingsgetallen op die hij nodig heeft, en alleen die getallen gaan naar het "
+                   f"AI-model; je bestand zelf blijft in deze browsersessie en wordt nergens opgeslagen."),
+                icon=":material/lock:")
+        render_assistant(own_backend(own), history_key=f"{HISTORY_KEY}_own_{own['signature']}")
+    else:
+        st.info(tr("The assistant answers from the **sample hotel's** forecast (export of 31 May 2017, so "
+                   "**today is Thursday 1 June 2017**) with the default staffing rules. Every number it gives "
+                   "comes from the same tools as the Plan tab. To ask about your own reservations, upload "
+                   "them on the Plan tab first.",
+                   "De assistent antwoordt vanuit de voorspelling van het **voorbeeldhotel** (export van "
+                   "31 mei 2017, dus **vandaag is donderdag 1 juni 2017**) met de standaard personeelsregels. "
+                   "Elk getal komt uit dezelfde hulpmiddelen als het tabblad Plan. Wil je vragen stellen over "
+                   "je eigen reserveringen? Upload ze dan eerst op het tabblad Plan."),
+                icon=":material/info:")
+        render_assistant(sample_backend())
 
 st.html(ui.footer(REPO))

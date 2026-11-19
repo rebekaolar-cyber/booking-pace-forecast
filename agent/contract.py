@@ -32,7 +32,9 @@ class ForecastBackend(Protocol):
         """{"days": [{"date", "weekday", "booked_so_far_guests", "usual_for_weekday_guests",
         "forecast_guests", "range_low_guests", "range_high_guests", "vs_usual_pct",
         "flag" ("busy" | "quiet" | None), "closed": False}]}
-        A day the place is closed is {"date", "weekday", "closed": True} with no numbers."""
+        A day the place is closed is {"date", "weekday", "closed": True} with no numbers.
+        When walk-ins are estimated (a restaurant's own upload), an open day also has
+        "from_reservations_guests" and "walk_ins_estimate_guests"; forecast_guests is their sum."""
 
     def staffing(self, date: dt.date, role: str | None) -> dict:
         """{"date", "forecast_guests", "staff": [{"role", "count", "rule"}]}"""

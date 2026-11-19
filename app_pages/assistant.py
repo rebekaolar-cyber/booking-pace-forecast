@@ -173,16 +173,26 @@ def _show_turn(question: str, result) -> None:
         _show_details(result)
 
 
-def render(backend) -> None:
-    """Draw the chat page. Safe without an API key: it explains and disables input."""
+def _asked_this_session() -> int:
+    """Questions asked in this session over every conversation (sample hotel and own files)."""
+    return sum(len(v) for k, v in st.session_state.items()
+               if isinstance(k, str) and k.startswith(HISTORY_KEY) and isinstance(v, list))
+
+
+def render(backend, history_key: str = HISTORY_KEY) -> None:
+    """Draw the chat page. Safe without an API key: it explains and disables input.
+
+    history_key keeps one conversation per dataset, so answers about the sample hotel never
+    become context for questions about the visitor's own file. The session cap counts them all.
+    """
     st.subheader(tr("Ask the assistant", "Vraag het de assistent"))
     st.caption(tr("Questions about expected guests and staffing, in English or Dutch.",
                   "Vragen over verwachte gasten en personeel, in het Nederlands of Engels."))
 
-    history: list[tuple[str, object]] = st.session_state.setdefault(HISTORY_KEY, [])
+    history: list[tuple[str, object]] = st.session_state.setdefault(history_key, [])
     api_key = _api_key()
     counter = _daily_counter()
-    session_limit = len(history) >= MAX_QUESTIONS_PER_SESSION
+    session_limit = _asked_this_session() >= MAX_QUESTIONS_PER_SESSION
     daily_limit = counter.reached(MAX_QUESTIONS_PER_DAY)
 
     if not api_key:
@@ -244,5 +254,5 @@ def render(backend) -> None:
     history.append((question, result))
     # This answer may have used the last question. The input above was drawn before it, still
     # enabled, so draw the page again: it then shows the limit note and disables the input.
-    if len(history) >= MAX_QUESTIONS_PER_SESSION or counter.reached(MAX_QUESTIONS_PER_DAY):
+    if _asked_this_session() >= MAX_QUESTIONS_PER_SESSION or counter.reached(MAX_QUESTIONS_PER_DAY):
         st.rerun()
