@@ -12,21 +12,42 @@ import threading
 
 import streamlit as st
 
+from agent import loop
 from agent.loop import answer
 from agent.run_log import cost_usd, log_run
+from app_pages.i18n import tr
 
 # Two soft caps keep a public demo from running up the API bill. The session cap resets when
 # someone reloads the page, so there is also a daily cap shared by everyone on this server.
 # Neither is the real protection: that is the monthly spend limit set on the API key itself.
 MAX_QUESTIONS_PER_SESSION = 10
 MAX_QUESTIONS_PER_DAY = 200  # all sessions together, per UTC day
-EXAMPLE_QUESTIONS = [
+EXAMPLE_QUESTIONS = [  # one Dutch question in English mode shows off the second language
     "How many bar staff do I need on Saturday?",
     "Any unusual days in the next two weeks?",
     "Wordt het druk aanstaande vrijdag?",
 ]
+EXAMPLE_QUESTIONS_NL = [  # and one English question in Dutch mode
+    "Hoeveel barpersoneel heb ik zaterdag nodig?",
+    "Zijn er ongewone dagen in de komende twee weken?",
+    "Will it be busy this Friday?",
+]
 DAILY_LIMIT_NOTE = ("The demo has answered all the questions it can for today. "
                     "Please come back tomorrow.")
+DAILY_LIMIT_NOTE_NL = ("De demo heeft vandaag alle vragen beantwoord die hij kan. "
+                       "Kom morgen gerust terug.")
+# The loop's fixed replies (errors, limits) are English; the model's own answers already
+# follow the question's language. Shown in Dutch when the page is in Dutch.
+FIXED_REPLIES_NL = {
+    loop.TOO_MANY_STEPS: ("Sorry, voor die vraag waren te veel stappen nodig om betrouwbaar te "
+                          "antwoorden. Kun je hem eenvoudiger of smaller stellen, bijvoorbeeld per dag?"),
+    loop.NO_API_KEY: "De assistent is nog niet ingesteld: er is geen Anthropic API-sleutel gevonden.",
+    loop.API_PROBLEM: "Sorry, ik kon de AI-dienst nu niet bereiken. Probeer het zo nog eens.",
+    loop.INTERNAL_PROBLEM: ("Sorry, er ging iets mis in de assistent zelf (een interne fout, niet "
+                            "de AI-dienst). Het probleem is gelogd."),
+    loop.NO_TEXT: "Sorry, ik kon geen antwoord samenstellen. Probeer de vraag anders te stellen.",
+    loop.REFUSED: "Sorry, met die vraag kan ik niet helpen.",
+}
 HISTORY_KEY = "assistant_history"  # prefixed so it can't clash with the main app's state
 AVATARS = {"user": ":material/person:", "assistant": ":material/room_service:"}
 
@@ -82,32 +103,40 @@ def _daily_counter() -> DailyCounter:
     return DailyCounter()
 
 
+def _reply_text(result) -> str:
+    """The answer as shown: the model's own words, or a fixed reply in the page's language."""
+    return tr(result.answer, FIXED_REPLIES_NL.get(result.answer, result.answer))
+
+
 def _show_details(result) -> None:
     """The 'How I got this' box: lets a manager (or reviewer) check where numbers came from."""
-    with st.expander("How I got this"):
+    with st.expander(tr("How I got this", "Hoe ik hieraan kom")):
         if result.tool_calls:
             for call in result.tool_calls:
                 st.markdown(f"- `{call.name}` {json.dumps(call.input)} ({call.seconds:.2f} s)")
         else:
-            st.markdown("No tools were used.")
+            st.markdown(tr("No tools were used.", "Er zijn geen hulpmiddelen gebruikt."))
         cost = cost_usd(result.model, result.input_tokens, result.output_tokens)
-        cost_text = f"{cost:.5f} USD" if cost is not None else "unknown"
-        st.caption(f"{result.seconds:.1f} s total · {result.input_tokens} in / "
-                   f"{result.output_tokens} out tokens · cost {cost_text} · {result.model}")
+        cost_text = f"{cost:.5f} USD" if cost is not None else tr("unknown", "onbekend")
+        st.caption(tr(f"{result.seconds:.1f} s total · {result.input_tokens} in / "
+                      f"{result.output_tokens} out tokens · cost {cost_text} · {result.model}",
+                      f"{result.seconds:.1f} s totaal · {result.input_tokens} in / "
+                      f"{result.output_tokens} uit tokens · kosten {cost_text} · {result.model}"))
 
 
 def _show_turn(question: str, result) -> None:
     with st.chat_message("user", avatar=AVATARS["user"]):
         st.markdown(question)
     with st.chat_message("assistant", avatar=AVATARS["assistant"]):
-        st.markdown(result.answer)
+        st.markdown(_reply_text(result))
         _show_details(result)
 
 
 def render(backend) -> None:
     """Draw the chat page. Safe without an API key: it explains and disables input."""
-    st.subheader("Ask the assistant")
-    st.caption("Questions about expected guests and staffing, in English or Dutch.")
+    st.subheader(tr("Ask the assistant", "Vraag het de assistent"))
+    st.caption(tr("Questions about expected guests and staffing, in English or Dutch.",
+                  "Vragen over verwachte gasten en personeel, in het Nederlands of Engels."))
 
     history: list[tuple[str, object]] = st.session_state.setdefault(HISTORY_KEY, [])
     api_key = _api_key()
@@ -116,31 +145,36 @@ def render(backend) -> None:
     daily_limit = counter.reached(MAX_QUESTIONS_PER_DAY)
 
     if not api_key:
-        st.info("The assistant needs an Anthropic API key. Add ANTHROPIC_API_KEY to "
-                ".streamlit/secrets.toml or set it as an environment variable.")
+        st.info(tr("The assistant needs an Anthropic API key. Add ANTHROPIC_API_KEY to "
+                   ".streamlit/secrets.toml or set it as an environment variable.",
+                   "De assistent heeft een Anthropic API key nodig. Zet ANTHROPIC_API_KEY in "
+                   ".streamlit/secrets.toml of als omgevingsvariabele."))
     if session_limit:
-        st.info(f"You've asked {MAX_QUESTIONS_PER_SESSION} questions, the limit for one "
-                "session of this demo. Thanks for trying it!")
+        st.info(tr(f"You've asked {MAX_QUESTIONS_PER_SESSION} questions, the limit for one "
+                   "session of this demo. Thanks for trying it!",
+                   f"Je hebt {MAX_QUESTIONS_PER_SESSION} vragen gesteld, het maximum voor één sessie "
+                   "van deze demo. Bedankt voor het uitproberen!"))
     elif daily_limit:
-        st.info(DAILY_LIMIT_NOTE)
+        st.info(tr(DAILY_LIMIT_NOTE, DAILY_LIMIT_NOTE_NL))
     disabled = not api_key or session_limit or daily_limit
 
     question = None
     with st.container(horizontal=True):
-        for example in EXAMPLE_QUESTIONS:
+        for example in tr(EXAMPLE_QUESTIONS, EXAMPLE_QUESTIONS_NL):
             if st.button(example, disabled=disabled):
                 question = example
 
     for past_question, past_result in history:
         _show_turn(past_question, past_result)
 
-    typed = st.chat_input("Ask about guests or staffing...", disabled=disabled)
+    typed = st.chat_input(tr("Ask about guests or staffing...", "Vraag naar gasten of personeel..."),
+                          disabled=disabled, key="assistant_input")
     question = question or typed
     if not question or disabled:
         return
 
     if not counter.take(MAX_QUESTIONS_PER_DAY):  # another session took the last one
-        st.info(DAILY_LIMIT_NOTE)
+        st.info(tr(DAILY_LIMIT_NOTE, DAILY_LIMIT_NOTE_NL))
         return
 
     # Earlier turns give follow-ups like "and Sunday?" their context; the loop keeps the last 4.
@@ -148,10 +182,10 @@ def render(backend) -> None:
     with st.chat_message("user", avatar=AVATARS["user"]):
         st.markdown(question)
     with st.chat_message("assistant", avatar=AVATARS["assistant"]):
-        with st.spinner("Checking the forecast..."):
+        with st.spinner(tr("Checking the forecast...", "De voorspelling wordt bekeken...")):
             result = answer(question, backend, client=_client(api_key), history=earlier)
         log_run(result)
-        st.markdown(result.answer)
+        st.markdown(_reply_text(result))
         _show_details(result)
     history.append((question, result))
     # This answer may have used the last question. The input above was drawn before it, still

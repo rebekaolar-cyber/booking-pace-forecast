@@ -6,6 +6,8 @@
 **Upload a reservations export and get the next two weeks: guests per day, a likely range, the
 unusual days and how many staff to schedule. Then ask an assistant about it, in English or Dutch.**
 
+The whole app switches between English and Dutch (top right; a link ending in `?lang=nl` opens it in Dutch).
+
 - **A forecast that reads the reservation book.** On 119,390 real hotel bookings, its error 7 days
   ahead is 53-68% smaller than the usual weekday average ([`reports/results.md`](reports/results.md),
   bookings: [`data/README.md`](data/README.md)).
