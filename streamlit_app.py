@@ -810,6 +810,8 @@ with ask_tab:
     from app_pages.assistant import render as render_assistant
 
     own = st.session_state.get(OWN_DATA_KEY)
+    if not own:
+        st.session_state.pop("own_backend", None)  # the visitor's data leaves the session with it
     about = "sample"
     if own:
         choices = {"own": tr("My reservations", "Mijn reserveringen"),
@@ -822,14 +824,15 @@ with ask_tab:
         st.info(tr(f"The assistant answers from **your own reservations**, with the settings from the Plan "
                    f"tab (export of {exported}, so **today is {T.long_date(today)}**). It looks up the "
                    f"forecast numbers it needs, and only those numbers go to the AI model. Your file is "
-                   f"never written to disk: the app keeps it in memory for at most an hour, and the log "
-                   f"of these conversations holds no questions, answers or numbers.",
+                   f"never written to disk: it stays in the app's memory while you use it (and cached "
+                   f"copies for at most an hour), and the log of these conversations holds no questions, "
+                   f"answers or numbers.",
                    f"De assistent antwoordt vanuit **je eigen reserveringen**, met de instellingen van het "
                    f"tabblad Plan (export van {exported}, dus **vandaag is {T.long_date(today)}**). Hij zoekt "
                    f"de voorspellingsgetallen op die hij nodig heeft, en alleen die getallen gaan naar het "
-                   f"AI-model. Je bestand wordt nooit op schijf opgeslagen: de app houdt het hooguit een uur "
-                   f"in het geheugen, en het logboek van deze gesprekken bevat geen vragen, antwoorden of "
-                   f"getallen."),
+                   f"AI-model. Je bestand wordt nooit op schijf opgeslagen: het blijft in het geheugen van de "
+                   f"app zolang je hem gebruikt (en tijdelijke kopieën hooguit een uur), en het logboek van "
+                   f"deze gesprekken bevat geen vragen, antwoorden of getallen."),
                 icon=":material/lock:")
         render_assistant(own_backend(own), history_key=f"{HISTORY_KEY}_own_{own['signature']}", private=True)
     else:

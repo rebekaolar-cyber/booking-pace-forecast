@@ -817,5 +817,8 @@ def test_eight_in_ten_past_days_within_the_range_is_the_definition():
         {"days_ahead": 14, "mean_abs_error_guests": 8.9, "range_half_width_guests": 16.0}]},
         "range_percentile": 80, "range_meaning": "8 in 10 past days stayed within this distance of the forecast"})
     assert scoring.faithfulness(make_any(answer, [acc]))["ok"]
-    claim = "Afterwards, 8 in 10 actual results landed inside the range."  # still a claim to check
-    assert not scoring.faithfulness(make_any(claim, [acc]))["ok"]
+    for claim in ["Afterwards, 8 in 10 actual results landed inside the range.",
+                  "Over the past days since the export, 8 in 10 landed within the range.",
+                  "In the 14 days after the export, 8 in 10 of those past days landed within ±16 guests.",
+                  "Of the previous days, 80% landed within the likely range."]:
+        assert not scoring.faithfulness(make_any(claim, [acc]))["ok"], claim  # claims to check

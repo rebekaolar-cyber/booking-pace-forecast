@@ -178,8 +178,11 @@ _INTENT_TEXT = re.compile(r"\bmeant to\b|\bdesigned to\b|\bsupposed to\b|\binten
 # "8 in 10 past days landed within ±16 guests" is the tool's own definition of the range
 # (range_meaning: "8 in 10 past days stayed within this distance"), not a claim about what
 # happened after the export, even though it says "landed".
-_PAST_DAYS_WITHIN = re.compile(r"\b(?:past|earlier|previous) days\b.*\bwithin\b|"
-                               r"\b(?:eerdere|vorige|afgelopen) dagen\b.*\bbinnen\b", re.I)
+# Only in the tool's form: past days within a distance ("within ±16 guests"), never "within the
+# range", and never about the days after the export.
+_PAST_DAYS_WITHIN = re.compile(r"\b(?:past|earlier|previous) days\b.*\bwithin\s*(?:±|\+/-)?\s*\d|"
+                               r"\b(?:eerdere|vorige) dagen\b.*\bbinnen\s*(?:±|\+/-)?\s*\d", re.I)
+_AFTER_EXPORT = re.compile(r"\b(?:since|after|afterwards|sinds|na afloop|na de)\b", re.I)
 
 # "16 days away": how far a day the clause names is from today (a date difference the reader
 # can check, so it is allowed when it is exactly that distance).
@@ -844,7 +847,8 @@ def _pool(src: _Sources, days: set[dt.date] | None, all_days: set[dt.date] | Non
                 values.append(_Value(sum(x for _, x in dv) / len(dv), key))
     named = set(src.records) if days is None else days
     pairs = [p for d in named for p in src.pairs.get(d, [])]
-    intent = bool(_INTENT_TEXT.search(clause)) or bool(_PAST_DAYS_WITHIN.search(clause))
+    intent = bool(_INTENT_TEXT.search(clause)) or (
+        bool(_PAST_DAYS_WITHIN.search(clause)) and not _AFTER_EXPORT.search(clause))
     coverage_claim = bool(_COVERAGE_TEXT.search(clause)) and not intent
     defines = bool(_DEFINITION_TEXT.search(clause)) or intent
     # The percentile may be written as "80%" only in a clause that defines the range. A rate

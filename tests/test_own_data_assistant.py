@@ -106,3 +106,14 @@ def test_a_failed_upload_does_not_leave_the_old_file_with_the_assistant(export, 
     assert not at.exception, [e.value for e in at.exception]
     assert at.error  # the Plan tab explains what's wrong with the file
     assert not _has(at, "ask_about")  # and the assistant is back on the sample hotel
+
+
+def test_the_upload_leaves_the_session_when_the_visitor_goes_back_to_the_sample(export, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    recent = export[pd.to_datetime(export["Datum bezoek"], dayfirst=True) >= "2017-01-01"]
+    at = AppTest.from_file(str(APP), default_timeout=300).run()
+    at.segmented_control(key="source").set_value("own").run()
+    at.file_uploader(key="upload").upload("goed.csv", recent.to_csv(index=False).encode(), "text/csv").run()
+    assert "own_backend" in at.session_state
+    at.segmented_control(key="source").set_value("sample").run()
+    assert "own_backend" not in at.session_state

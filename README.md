@@ -34,7 +34,9 @@ Saturday?", "Any unusual days in the next two weeks?", "Wordt het druk aanstaand
   reservations". The tools then run on exactly what the Plan tab used: the columns you confirmed,
   the export day, your staffing rules, till totals and walk-in estimate
   ([`agent/real_backend.py`](agent/real_backend.py)). Only the forecast numbers the model looks up
-  are sent to the API; the file stays in your browser session and is never saved. Each dataset
+  are sent to the API. The file is never written to disk: it stays in the app's memory while you
+  use it (cached copies for at most an hour), and the run log keeps no questions, answers or
+  numbers from these conversations. Each dataset
   keeps its own conversation, so answers about the sample never leak into questions about your file.
 
 ![Architecture: the chat tab, the eval runner and MCP clients all reach the forecast through the same five read-only tools](docs/architecture.png)
