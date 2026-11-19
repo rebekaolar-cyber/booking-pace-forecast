@@ -223,11 +223,23 @@ def render(backend) -> None:
     with st.chat_message("user", avatar=AVATARS["user"]):
         st.markdown(question)
     with st.chat_message("assistant", avatar=AVATARS["assistant"]):
+        reply = st.empty()  # filled piece by piece while the answer streams in
+        pieces: list[str] = []
+
+        def show_piece(piece: str | None) -> None:
+            if piece is None:  # that round called tools: its text was a preamble, not the answer
+                pieces.clear()
+                reply.empty()
+                return
+            pieces.append(piece)
+            reply.markdown("".join(pieces) + " ▌")
+
         with st.spinner(tr("Checking the forecast...", "De voorspelling wordt bekeken...")):
-            result = answer(question, backend, client=_client(api_key), history=earlier)
+            result = answer(question, backend, client=_client(api_key), history=earlier,
+                            on_text=show_piece)
         log_run(result)
         _report_error(result)
-        st.markdown(_reply_text(result))
+        reply.markdown(_reply_text(result))  # the final text (or a plain error), without the cursor
         _show_details(result)
     history.append((question, result))
     # This answer may have used the last question. The input above was drawn before it, still

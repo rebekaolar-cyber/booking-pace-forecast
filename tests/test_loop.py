@@ -326,3 +326,60 @@ def test_prompt_v2_is_v1_plus_two_rules():
     assert len(added) == 2
     assert "14.5% below" in added[0] and "never rounded" in added[0]
     assert "language the question is written in" in added[1] and "English" in added[1]
+
+
+# --------------------------------------------------------------------------- streaming
+
+class FakeStreamingClient(FakeClient):
+    """Adds `client.messages.stream`: the same scripted responses, their text sent piece by piece."""
+
+    def stream(self, **kwargs):
+        message = self.create(**kwargs)
+        client = self
+
+        class Stream:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            @property
+            def text_stream(self):
+                for block in message.content:
+                    if block.type == "text":
+                        yield from block.text.split(" ")  # a few pieces per block
+
+            def get_final_message(self):
+                return message
+
+        client.streamed = True
+        return Stream()
+
+
+def test_streaming_passes_text_on_and_gives_the_same_result():
+    script = [response([text("Let me check."), tool_use("t1", "get_today_and_data_range")], "tool_use"),
+              response([text("Saturday looks busy.")], "end_turn")]
+    pieces = []
+    streamed = answer("How busy is Saturday?", FakeBackend(), client=FakeStreamingClient(script),
+                      on_text=pieces.append)
+    plain, _ = run(copy.deepcopy(script))
+    assert streamed.answer == plain.answer == "Saturday looks busy."
+    assert [c.name for c in streamed.tool_calls] == [c.name for c in plain.tool_calls]
+    # The tool round's preamble is followed by None (clear it), then the real answer arrives.
+    assert None in pieces
+    after_clear = pieces[len(pieces) - pieces[::-1].index(None):]
+    assert "".join(after_clear).replace(" ", "") == "Saturdaylooksbusy."
+
+
+def test_without_on_text_the_loop_never_streams():
+    client = FakeStreamingClient([response([text("ok")], "end_turn")])
+    answer("Hi", FakeBackend(), client=client)
+    assert not getattr(client, "streamed", False)
+
+
+def test_a_streaming_error_becomes_an_api_problem_answer():
+    client = FakeStreamingClient([FakeAPIError("overloaded")])
+    result = answer("Hi", FakeBackend(), client=client, on_text=lambda piece: None)
+    assert result.answer == API_PROBLEM
+    assert result.stop_reason == "error"
