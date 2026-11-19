@@ -48,8 +48,9 @@ single runs is therefore within run-to-run noise, not proof that a change helped
 | dr03, "two" | "The two ranges overlap" | Scorer false alarm |
 | dr01, "5" | "Mon 5, Wed 7, Sat 10 and Sun 11 are the flagged days" | Scorer false alarm, **fixed** after this run (a weekday and day number in a list) |
 
-So of 60 answers: 1 real mistake, 3 answers against the refusal spec, 1 unclear, and no wrong or
-invented number found by hand. The other 6 flags were the scorer's.
+So of the 11 flagged answers: 1 real mistake, 3 against the refusal spec, 1 unclear and 6 scorer
+false alarms. None had a wrong or invented number. The 49 answers that passed every check were not
+read by hand, so a mistake the scorer can't see (see Known limits in the README) could be among them.
 
 ## Scorer changes made on 19 Nov because of these runs
 
