@@ -14,6 +14,8 @@ from html import escape
 
 import streamlit as st
 
+from app_pages.i18n import short_date, tr, vega_locale
+
 # ---------------------------------------------------------------- colours -------------------
 
 BAND, PAPER = "#0B2E28", "#F2F4EC"             # the dark header and the text on it
@@ -100,8 +102,20 @@ h2, h3 {{ font-variation-settings:"wdth" 86; letter-spacing:-0.005em; }}
   .gf-late {{ animation:none; opacity:1; }}
 }}
 @media (max-width: 900px) {{
-  .gf-hero {{ grid-template-columns:minmax(0,1fr); }}
+  .gf-hero {{ grid-template-columns:minmax(0,1fr); padding-top:5.6rem; }}  /* room for the language switch */
 }}
+
+/* ---- the English / Nederlands switch, top right on the dark band */
+.st-key-lang_switch {{ position:relative; z-index:2; margin-top:3.6rem; margin-bottom:-6.6rem; }}
+.st-key-lang_switch button {{
+  background:transparent; color:var(--gf-band-soft); border-color:var(--gf-band-line);
+  min-height:2rem; padding:.2rem .85rem;
+}}
+.st-key-lang_switch button:hover {{ color:var(--gf-paper); border-color:var(--gf-band-soft); }}
+.st-key-lang_switch button[aria-checked="true"] {{
+  background:var(--gf-paper) !important; color:var(--gf-band) !important; border-color:var(--gf-paper) !important;
+}}
+.st-key-lang_switch button p {{ font-size:.85rem; font-weight:600; }}
 
 /* ---- tabs sit on the bottom edge of the band, like index tabs on a book */
 [data-testid="stTabs"] {{ position:relative; z-index:1; margin-top:-4.1rem; }}
@@ -259,32 +273,47 @@ def _story_plot() -> str:
         return f"left:{px / w * 100:.2f}%;top:{py / h * 100:.2f}%"
 
     gap = STORY["booked"] - STORY["normally"]
-    alt = (f"Line chart: guests in the reservation book for Friday 28 April 2017 run well above "
-           f"a normal Friday for the whole 60 days before arrival. A week ahead the book held "
-           f"{STORY['booked']} guests where a normal Friday holds {STORY['normally']}.")
+    alt = tr(f"Line chart: guests in the reservation book for Friday 28 April 2017 run well above "
+             f"a normal Friday for the whole 60 days before arrival. A week ahead the book held "
+             f"{STORY['booked']} guests where a normal Friday holds {STORY['normally']}.",
+             f"Lijngrafiek: de gasten in het reserveringsboek voor vrijdag 28 april 2017 liggen de "
+             f"hele 60 dagen voor aankomst ruim boven een normale vrijdag. Een week vooraf stonden er "
+             f"{STORY['booked']} gasten in het boek, waar een normale vrijdag er {STORY['normally']} heeft.")
     return f"""<div class="gf-plot"><img src="{src}" alt="{alt}">
-<span class="gf-tick" aria-hidden="true" style="{at(left, h - bottom + 9)}">60 days before</span>
-<span class="gf-tick" aria-hidden="true" style="{at(end, h - bottom + 9)};transform:translateX(-100%)">arrival</span>
-<span class="gf-gap gf-late" aria-hidden="true" style="{at(xm - 9, (y_this + y_norm) / 2)}">+{gap} guests</span>
-<span class="gf-lab gf-late" aria-hidden="true" style="{at(end + 9, y(STORY_THIS[-1]))};color:#FFB59C">this Friday</span>
-<span class="gf-lab gf-late" aria-hidden="true" style="{at(end + 9, y(STORY_NORMAL[-1]))};color:#A9C7BC">a normal one</span>
+<span class="gf-tick" aria-hidden="true" style="{at(left, h - bottom + 9)}">{tr("60 days before", "60 dagen vooraf")}</span>
+<span class="gf-tick" aria-hidden="true" style="{at(end, h - bottom + 9)};transform:translateX(-100%)">{tr("arrival", "aankomst")}</span>
+<span class="gf-gap gf-late" aria-hidden="true" style="{at(xm - 9, (y_this + y_norm) / 2)}">+{gap} {tr("guests", "gasten")}</span>
+<span class="gf-lab gf-late" aria-hidden="true" style="{at(end + 9, y(STORY_THIS[-1]))};color:#FFB59C">{tr("this Friday", "deze vrijdag")}</span>
+<span class="gf-lab gf-late" aria-hidden="true" style="{at(end + 9, y(STORY_NORMAL[-1]))};color:#A9C7BC">{tr("a normal one", "een normale")}</span>
 </div>"""
 
 
 def hero(repo: str) -> str:
     s = STORY
+    title = tr("How many guests are coming?", "Hoeveel gasten komen er?")
+    lede = tr("A forecast for the next two weeks that reads your reservation book: the usual number "
+              "for each weekday, corrected by how far bookings are running ahead of or behind normal.",
+              "Een voorspelling voor de komende twee weken die je reserveringsboek leest: het "
+              "gebruikelijke aantal per weekdag, bijgesteld naar hoeveel de boekingen voor of achter "
+              "lopen op normaal.")
+    code = tr("Code on GitHub", "Code op GitHub")
+    caption = tr(
+        f"A week ahead of <b>Friday 28 April 2017</b>, one hotel's book held <b>{s['booked']} guests</b>; "
+        f"a normal Friday holds {s['normally']}. The weekday average said {s['weekday_average']}. "
+        f"This forecast said <b>{s['pace']}</b>, and <b>{s['actual']} came</b>.",
+        f"Een week voor <b>vrijdag 28 april 2017</b> stonden er in het boek van één hotel "
+        f"<b>{s['booked']} gasten</b>; op een normale vrijdag zijn dat er {s['normally']}. Het "
+        f"weekdaggemiddelde zei {s['weekday_average']}. Deze voorspelling zei <b>{s['pace']}</b>, "
+        f"en er kwamen er <b>{s['actual']}</b>.")
     return f"""
 <header class="gf-hero">
   <div>
-    <h1>How many guests are coming?</h1>
-    <p class="gf-lede">A forecast for the next two weeks that reads your reservation book: the usual
-    number for each weekday, corrected by how far bookings are running ahead of or behind normal.</p>
-    <p class="gf-cta"><a class="gf-code" href="{escape(repo)}" target="_blank" rel="noopener">Code on GitHub</a></p>
+    <h1>{title}</h1>
+    <p class="gf-lede">{lede}</p>
+    <p class="gf-cta"><a class="gf-code" href="{escape(repo)}" target="_blank" rel="noopener">{code}</a></p>
   </div>
   <figure class="gf-story">{_story_plot()}
-    <p class="gf-caption">A week ahead of <b>Friday 28 April 2017</b>, one hotel's book held
-    <b>{s['booked']} guests</b>; a normal Friday holds {s['normally']}. The weekday average said
-    {s['weekday_average']}. This forecast said <b>{s['pace']}</b>, and <b>{s['actual']} came</b>.</p>
+    <p class="gf-caption">{caption}</p>
   </figure>
 </header>"""
 
@@ -321,10 +350,11 @@ def calendar(days: list[dict]) -> str:
     top = max([max(d["forecast"], d["usual"]) for d in open_days] or [1]) or 1
     tiles = []
     for d in days:
-        when = f'<b>{d["date"]:%a}</b> {d["date"].day} {d["date"]:%b}'
+        day, date = short_date(d["date"]).split(" ", 1)
+        when = f'<b>{day}</b> {date}'
         if d["closed"]:
             tiles.append(f'<div class="gf-day gf-closed"><div class="gf-when">{when}</div>'
-                         '<div class="gf-numrow"><span class="gf-num">Closed</span></div></div>')
+                         f'<div class="gf-numrow"><span class="gf-num">{tr("Closed", "Gesloten")}</span></div></div>')
             continue
         chip = ""
         if d["status"] != "usual":
@@ -361,15 +391,18 @@ def error_bars(rows: list[tuple[str, float, str, str]]) -> str:
         cells.append(
             f'<div class="gf-err-name">{escape(name)}</div>'
             f'<div class="gf-err-track"><b style="width:{value / longest * 100:.1f}%;background:{colour}"></b></div>'
-            f'<div class="gf-err-val">{value:.1f}<small>guests</small></div>'
+            f'<div class="gf-err-val">{tr(f"{value:.1f}", f"{value:.1f}".replace(".", ","))}'
+            f'<small>{tr("guests", "gasten")}</small></div>'
             f'<div class="gf-err-note">{escape(note)}</div>')
     return f'<div class="gf-errs">{"".join(cells)}</div>'
 
 
 def footer(repo: str) -> str:
-    return (f'<footer class="gf-foot">Built by Rebeka Olar. '
-            f'<a href="{escape(repo)}" target="_blank" rel="noopener">Code and tests on GitHub</a>. '
-            'Your file is processed in memory and not saved.</footer>')
+    link = f'<a href="{escape(repo)}" target="_blank" rel="noopener">'
+    return tr(f'<footer class="gf-foot">Built by Rebeka Olar. {link}Code and tests on GitHub</a>. '
+              'Your file is processed in memory and not saved.</footer>',
+              f'<footer class="gf-foot">Gemaakt door Rebeka Olar. {link}Code en tests op GitHub</a>. '
+              'Je bestand wordt alleen in het geheugen verwerkt en niet opgeslagen.</footer>')
 
 
 # ---------------------------------------------------------------- charts --------------------
@@ -379,8 +412,9 @@ def polish(chart, height: int):
     axis = dict(labelFont=BODY_FONT, titleFont=BODY_FONT, labelColor=INK2, titleColor=INK2,
                 labelFontSize=12, titleFontSize=12, titleFontWeight=500, titlePadding=10,
                 gridColor=LINE, gridWidth=1, domainColor="#BCC7C2", tickColor="#BCC7C2", labelPadding=6)
+    locale = vega_locale()  # Dutch day and month names on the axes and in tooltips
     return (chart.properties(height=height, background="transparent")
-            .configure(font=BODY_FONT)
+            .configure(font=BODY_FONT, **({"locale": locale} if locale else {}))
             .configure_view(stroke=None)
             .configure_axis(**axis)
             .configure_axisY(domain=False, ticks=False, labelColor=MUTED)
