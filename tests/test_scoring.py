@@ -792,3 +792,30 @@ DR07_DAYS = [_out("get_forecast", {"days": [_jun(22, 144, 153, -6.0), _jun(23, 1
 ])
 def test_part_of_whole_day_counts(answer, grounded):
     assert scoring.faithfulness(make_any(answer, DR07_DAYS))["ok"] is grounded, answer
+
+
+@pytest.mark.parametrize("answer", [
+    "Three of the four days are above usual, Sunday is below.",                   # states swapped
+    "Only one of the four days is below usual, and three of the four days are above it.",
+])
+def test_part_of_whole_count_must_match_the_state_named_next_to_it(answer):
+    assert scoring.faithfulness(make_any(answer, DR07_DAYS))["ok"] is False, answer
+
+
+def test_part_and_whole_come_from_the_same_call():
+    week = [_jun(d, 100, 120, -16.7) for d in range(10, 15)] + [_jun(d, 130, 120, 8.3) for d in (15, 16)]
+    calls = DR07_DAYS + [_out("get_forecast", {"days": week})]  # 4 days (3 below) and 7 days (5 below)
+    assert scoring.faithfulness(make_any("Five of the seven days are below usual.", calls))["ok"]
+    assert not scoring.faithfulness(make_any("Three of the seven days are below usual.", calls))["ok"]
+
+
+def test_eight_in_ten_past_days_within_the_range_is_the_definition():
+    """ta02, live run of 19 Nov: the tool's own wording of the 80% range, not a coverage claim."""
+    answer = ("At 14 days ahead, the average error was 8.9 guests, and 8 in 10 past days landed "
+              "within ±16.0 guests of the forecast.")
+    acc = _out("get_accuracy", {"backtest": {"by_days_ahead": [
+        {"days_ahead": 14, "mean_abs_error_guests": 8.9, "range_half_width_guests": 16.0}]},
+        "range_percentile": 80, "range_meaning": "8 in 10 past days stayed within this distance of the forecast"})
+    assert scoring.faithfulness(make_any(answer, [acc]))["ok"]
+    claim = "Afterwards, 8 in 10 actual results landed inside the range."  # still a claim to check
+    assert not scoring.faithfulness(make_any(claim, [acc]))["ok"]

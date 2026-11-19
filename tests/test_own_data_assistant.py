@@ -78,3 +78,31 @@ def _has(at, key):
         return True
     except KeyError:
         return False
+
+
+def test_staffing_for_the_top_of_the_range_matches_the_plan_tab(export):
+    mapping = P.guess_columns(export.columns)
+    high = RealBackend(raw_export=export, export_day=P.SAMPLE_EXPORT_DAY, mapping=mapping, staff_use="high")
+    plain = RealBackend(raw_export=export, export_day=P.SAMPLE_EXPORT_DAY, mapping=mapping)
+    day = high._data()["plan"].loc[pd.Timestamp(SAT)]
+    expected = P.staffing(pd.DataFrame([day]).assign(high=[day.high]), P.DEFAULT_RULES, use="high")
+    got = run_tool(high, "get_staffing", {"date": SAT})
+    assert {s["role"]: s["count"] for s in got["staff"]} == {
+        c.lower(): int(expected[c].iloc[0]) for c in expected.columns[1:]}
+    assert got["staffed_for_guests"] == round(day.high)
+    assert "top of the likely range" in got["staff"][0]["rule"]
+    assert "staffed_for_guests" not in run_tool(plain, "get_staffing", {"date": SAT})
+
+
+def test_a_failed_upload_does_not_leave_the_old_file_with_the_assistant(export, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    recent = export[pd.to_datetime(export["Datum bezoek"], dayfirst=True) >= "2017-01-01"]
+    at = AppTest.from_file(str(APP), default_timeout=300).run()
+    at.segmented_control(key="source").set_value("own").run()
+    at.file_uploader(key="upload").upload("goed.csv", recent.to_csv(index=False).encode(), "text/csv").run()
+    assert _has(at, "ask_about")
+    too_short = export[pd.to_datetime(export["Datum bezoek"], dayfirst=True) >= "2017-05-25"]
+    at.file_uploader(key="upload").upload("kort.csv", too_short.to_csv(index=False).encode(), "text/csv").run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.error  # the Plan tab explains what's wrong with the file
+    assert not _has(at, "ask_about")  # and the assistant is back on the sample hotel

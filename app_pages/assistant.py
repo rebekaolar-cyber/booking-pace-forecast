@@ -5,8 +5,10 @@ All the AI work happens in ``agent.loop.answer``; this file is only the UI aroun
 """
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import json
+import re
 import os
 import sys
 import threading
@@ -14,6 +16,7 @@ import threading
 import streamlit as st
 
 from agent import loop
+from agent.contract import ToolCall
 from agent.loop import answer
 from agent.run_log import cost_usd, log_run
 from app_pages.i18n import tr
@@ -112,35 +115,46 @@ def _reply_text(result) -> str:
 # What usually lies behind an API error, in plain words: (text found in the error, English, Dutch).
 # Checked in order; the first match wins.
 ERROR_HINTS = [
-    (("credit balance",), "The Anthropic account behind this demo has run out of credits.",
+    (r"credit balance", "The Anthropic account behind this demo has run out of credits.",
      "Het Anthropic-account achter deze demo heeft geen tegoed meer."),
-    (("authentication", "x-api-key", "401"), "The API key was rejected: it may be mistyped or deleted.",
+    (r"error code: 401|authentication_error|invalid x-api-key",
+     "The API key was rejected: it may be mistyped or deleted.",
      "De API-sleutel werd geweigerd: hij is misschien verkeerd overgenomen of verwijderd."),
-    (("permission", "403"), "The API key isn't allowed to use this model.",
+    (r"error code: 403|permission_error", "The API key isn't allowed to use this model.",
      "De API-sleutel mag dit model niet gebruiken."),
-    (("not_found", "404"), "The model name wasn't found.", "De modelnaam werd niet gevonden."),
-    (("rate_limit", "429"), "Too many questions at once for this API key. Try again in a minute.",
+    (r"error code: 404|not_found_error", "The model name wasn't found.", "De modelnaam werd niet gevonden."),
+    (r"error code: 429|rate_limit_error", "Too many questions at once for this API key. Try again in a minute.",
      "Te veel vragen tegelijk voor deze API-sleutel. Probeer het over een minuut opnieuw."),
-    (("overloaded", "529"), "Anthropic's service is busy right now. Try again in a moment.",
+    (r"error code: 529|overloaded", "Anthropic's service is busy right now. Try again in a moment.",
      "De dienst van Anthropic is nu druk. Probeer het zo opnieuw."),
-    (("timeout", "timed out", "connection"), "The connection to Anthropic failed or timed out.",
+    (r"timed out|timeout|connection error", "The connection to Anthropic failed or timed out.",
      "De verbinding met Anthropic mislukte of duurde te lang."),
 ]
 
 
-def error_hint(error: str) -> str | None:
-    """The likely cause of an API error in plain words, or None when it doesn't look familiar."""
-    low = error.lower()
-    for needles, english, dutch in ERROR_HINTS:
-        if any(n in low for n in needles):
-            return tr(english, dutch)
+def error_hint(error: str, english: bool = False) -> str | None:
+    """The likely cause of an API error in plain words, or None when it doesn't look familiar.
+    Matched on the API's own error codes and types, not on any digits (a request id can hold "401")."""
+    for pattern, en, nl in ERROR_HINTS:
+        if re.search(pattern, error, re.I):
+            return en if english else tr(en, nl)
     return None
 
 
-def _report_error(result) -> None:
+def _private_copy(result):
+    """A run on a visitor's own file, as it may be logged: timings, tokens, cost, tool names and
+    the kind of error, but no question, answer, tool output or error text (all can hold their data)."""
+    return dataclasses.replace(
+        result, question="[own data: not logged]", answer="[own data: not logged]",
+        tool_calls=[ToolCall(c.name, {}, {}, c.seconds) for c in result.tool_calls],
+        error=None if result.error is None else (error_hint(result.error, english=True) or "unrecognised error"))
+
+
+def _report_error(result, private: bool = False) -> None:
     """Write a failed answer's real reason to the app log (Streamlit Cloud: Manage app → logs)."""
     if result.stop_reason == "error" and result.error:
-        print(f"[assistant] error after {result.seconds:.1f}s on {result.model}: {result.error}",
+        detail = _private_copy(result).error if private else result.error
+        print(f"[assistant] error after {result.seconds:.1f}s on {result.model}: {detail}",
               file=sys.stderr, flush=True)
 
 
@@ -179,11 +193,12 @@ def _asked_this_session() -> int:
                if isinstance(k, str) and k.startswith(HISTORY_KEY) and isinstance(v, list))
 
 
-def render(backend, history_key: str = HISTORY_KEY) -> None:
+def render(backend, history_key: str = HISTORY_KEY, private: bool = False) -> None:
     """Draw the chat page. Safe without an API key: it explains and disables input.
 
     history_key keeps one conversation per dataset, so answers about the sample hotel never
     become context for questions about the visitor's own file. The session cap counts them all.
+    private: the backend holds the visitor's own data, so the run log keeps no content.
     """
     st.subheader(tr("Ask the assistant", "Vraag het de assistent"))
     st.caption(tr("Questions about expected guests and staffing, in English or Dutch.",
@@ -247,8 +262,8 @@ def render(backend, history_key: str = HISTORY_KEY) -> None:
         with st.spinner(tr("Checking the forecast...", "De voorspelling wordt bekeken...")):
             result = answer(question, backend, client=_client(api_key), history=earlier,
                             on_text=show_piece)
-        log_run(result)
-        _report_error(result)
+        log_run(_private_copy(result) if private else result)
+        _report_error(result, private)
         reply.markdown(_reply_text(result))  # the final text (or a plain error), without the cursor
         _show_details(result)
     history.append((question, result))

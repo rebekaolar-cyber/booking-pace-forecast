@@ -57,11 +57,15 @@ class RealBackend:
     def __init__(self, raw_export: pd.DataFrame | None = None, export_day: pd.Timestamp | None = None,
                  rules: pd.DataFrame | None = None, actual: pd.Series | None = None,
                  dayfirst: bool = True, skip_closed: bool = True, name: str | None = None,
-                 mapping: dict | None = None, walk_in: tuple[float, float] | None = None):
+                 mapping: dict | None = None, walk_in: tuple[float, float] | None = None,
+                 staff_use: str = "forecast"):
         self._is_sample = raw_export is None
         self._raw = raw_export
         self._mapping = mapping
         self._walk_in = walk_in  # (Fri-Sun share, Mon-Thu share) of all guests, or None
+        if staff_use not in ("forecast", "high"):
+            raise ValueError("staff_use must be 'forecast' or 'high'")
+        self._staff_use = staff_use  # the Plan tab's "Staff for": the forecast or the top of the range
         self._export_day = None if export_day is None else pd.Timestamp(export_day).normalize()
         self._rules = P.DEFAULT_RULES if rules is None else rules
         self._actual = actual
@@ -94,8 +98,8 @@ class RealBackend:
         p = P.plan(book, until, days=MAX_HORIZON_DAYS, skip_closed=self._skip_closed, typical_error=typical)
         if self._walk_in:  # a restaurant: walk-ins on top of the reservations, as on the Plan tab
             p = P.add_walk_ins(p, *self._walk_in)
-        # --- the app's staffing call, with its default "Staff for: The forecast"
-        staff = P.staffing(p.assign(high=p.high.fillna(p.forecast)), self._rules, use="forecast")
+        # --- the app's staffing call, with the visitor's "Staff for" (default: the forecast)
+        staff = P.staffing(p.assign(high=p.high.fillna(p.forecast)), self._rules, use=self._staff_use)
         t3 = time.perf_counter()
         self.compute_seconds = {"load_and_prepare": t1 - t0, "self_check": t2 - t1,
                                 "plan_and_staffing": t3 - t2, "total": t3 - t0}
@@ -172,10 +176,13 @@ class RealBackend:
         for col, name, gpp, minimum in self._rule_rows():
             if role is not None and name != role:
                 continue
+            basis = "on the forecast" if self._staff_use == "forecast" else "on the top of the likely range"
             rule = ("closed: no staff planned" if r.closed else
-                    f"1 per {gpp:g} guests (on the forecast), rounded up, minimum {minimum}")
+                    f"1 per {gpp:g} guests ({basis}), rounded up, minimum {minimum}")
             out.append({"role": name, "count": int(staff[col]), "rule": rule})
         result = {"date": date.isoformat(), "forecast_guests": 0 if r.closed else _int(r.forecast), "staff": out}
+        if self._staff_use == "high" and not r.closed:  # staffed for the top of the range
+            result["staffed_for_guests"] = _int(r.high if not pd.isna(r.high) else r.forecast)
         if r.closed:
             result["closed"] = True
         return result

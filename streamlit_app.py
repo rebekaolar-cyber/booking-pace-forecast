@@ -28,6 +28,7 @@ REPO = "https://github.com/rebekaolar-cyber/booking-pace-forecast"
 UNUSUAL = 15  # % away from the usual weekday that counts as worth a look
 OWN_DATA_KEY = "own_data_for_assistant"  # what the Plan tab used on an upload, for the assistant tab
 
+T.ensure()  # so a ?lang=nl link gets a Dutch browser tab title too
 st.set_page_config(page_title=tr("Guest forecast", "Gastenvoorspelling"), layout="wide",
                    page_icon=str(Path(__file__).parent / "static" / "favicon.png"))
 ui.inject_css()
@@ -45,7 +46,8 @@ def sample_actual():
     return P.sample_outcome()
 
 
-@st.cache_data(show_spinner=False)
+# Uploads are cached by their content for one hour at most, then dropped from memory.
+@st.cache_data(show_spinner=False, ttl="1h", max_entries=20)
 def read_table(data: bytes, name: str) -> pd.DataFrame:
     if name.lower().endswith((".xlsx", ".xls")):
         return pd.read_excel(io.BytesIO(data))
@@ -59,7 +61,7 @@ def read_table(data: bytes, name: str) -> pd.DataFrame:
                         "probeer het opnieuw."))
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl="1h", max_entries=20)
 def run_plan(prep_df: pd.DataFrame, until: pd.Timestamp, actual, days: int, skip_closed: bool):
     prep = P.Prepared(prep_df, dropped=0)  # the spinner is drawn by the caller, in the visitor's language
     check = P.self_check(prep, until, actual, skip_closed=skip_closed)
@@ -139,8 +141,10 @@ def plan_page():
     actual = None
     walk_in = None  # (weekend share, weekday share) of all guests, when walk-ins are added on top
     file_ids: tuple = ()  # the uploads behind this plan, so the assistant knows when they change
+    # Set again at the end only when this run's own-file plan succeeds, so after a failed
+    # upload (or a switch to the sample) the assistant can't keep answering about an old file.
+    st.session_state.pop(OWN_DATA_KEY, None)
     if source == "sample":
-        st.session_state.pop(OWN_DATA_KEY, None)  # the assistant goes back to the sample hotel
         raw = sample_raw()
         mapping = P.guess_columns(raw.columns)
         dayfirst = True
@@ -194,7 +198,6 @@ def plan_page():
         up = st.file_uploader(tr("Your reservations (CSV or Excel)", "Je reserveringen (CSV of Excel)"),
                               type=["csv", "txt", "xlsx", "xls"], key="upload")
         if up is None:
-            st.session_state.pop(OWN_DATA_KEY, None)
             return
         file_ids = (up.file_id,)
         try:
@@ -246,6 +249,7 @@ def plan_page():
     until = pd.Timestamp(c1.date_input(
         tr("Bookings exported on", "Boekingen geëxporteerd op"), value=default_until.date(),
         min_value=res.made_on.min().date(), max_value=last_made.date(),
+        key=f"until_{source}_{file_ids[0] if file_ids else ''}",  # kept across a language switch, fresh per file
         help=tr("The forecast starts the day after. Bookings made after this day are ignored.",
                 "De voorspelling begint de dag erna. Boekingen van na deze dag tellen niet mee.")))
     days = c2.selectbox(tr("Days to plan", "Dagen om te plannen"), [7, 14, 21, 28], index=1, key="days")
@@ -297,13 +301,13 @@ def plan_page():
     change = total / usual_total - 1 if usual_total else 0.0
     if abs(change) < 0.005:
         against_usual = tr(f"about the same as a usual {days} days",
-                           f"ongeveer gelijk aan gewone {days} dagen")
+                           f"ongeveer gelijk aan normaal voor {days} dagen")
     elif change > 0:
         against_usual = tr(f"{change:.0%} more than a usual {days} days",
-                           f"{change:.0%} meer dan gewone {days} dagen")
+                           f"{change:.0%} meer dan normaal voor {days} dagen")
     else:
         against_usual = tr(f"{-change:.0%} fewer than a usual {days} days",
-                           f"{-change:.0%} minder dan gewone {days} dagen")
+                           f"{-change:.0%} minder dan normaal voor {days} dagen")
     one = len(unusual) == 1
     total_text = f"{total:,.0f}" if T.lang() == "en" else f"{total:,.0f}".replace(",", ".")
     figures = [
@@ -315,7 +319,7 @@ def plan_page():
          tr("needs a second look" if one else "need a second look", "verdient een tweede blik" if one
             else "verdienen een tweede blik"),
          tr(f"{UNUSUAL}% or more away from the usual weekday",
-            f"{UNUSUAL}% of meer naast de gewone weekdag")),
+            f"{UNUSUAL}% of meer afwijkend van een normale weekdag")),
     ]
     if len(check):
         row7 = check[check.days_ahead == min(7, check.days_ahead.max())].iloc[0]
@@ -340,7 +344,7 @@ def plan_page():
             title = [tr(f"Forecast: {r.forecast:.0f} guests", f"Voorspelling: {r.forecast:.0f} gasten"),
                      likely.capitalize(),
                      tr(f"Usual for a {T.day_name(r.date)}: {r.usual:.0f}",
-                        f"Gewoonlijk op {T.day_name(r.date)}: {r.usual:.0f}"),
+                        f"Normaal op {T.day_name(r.date)}: {r.usual:.0f}"),
                      tr(f"Booked so far: {r.booked:.0f}", f"Tot nu toe geboekt: {r.booked:.0f}"),
                      tr(f"{r.actual:.0f} actually came", f"Er kwamen er echt {r.actual:.0f}") if came_in else ""]
             if has_walk_ins:
@@ -352,11 +356,11 @@ def plan_page():
         tiles.append(tile)
     st.html(ui.calendar(tiles))
     st.html(ui.key([
-        ("bar", ui.CALM, tr("about usual", "ongeveer gewoon")),
-        ("bar", ui.HOT, tr(f"busier than usual by {UNUSUAL}% or more", f"{UNUSUAL}% of meer drukker dan gewoon")),
+        ("bar", ui.CALM, tr("about usual", "ongeveer normaal")),
+        ("bar", ui.HOT, tr(f"busier than usual by {UNUSUAL}% or more", f"{UNUSUAL}% of meer drukker dan normaal")),
         ("bar", ui.COOL, tr(f"quieter by {UNUSUAL}% or more", f"{UNUSUAL}% of meer rustiger")),
         ("tick", ui.INK, tr("line across each bar: the usual for that weekday",
-                            "streep door elke balk: het gewone aantal voor die weekdag")),
+                            "streep door elke balk: het normale aantal voor die weekdag")),
     ]))
 
     # ---- chart: how sure each day is
@@ -380,7 +384,7 @@ def plan_page():
                alt.Tooltip("forecast:Q", title=tr("Forecast", "Voorspelling"), format=".0f"),
                alt.Tooltip("low:Q", title=tr("Likely from", "Waarschijnlijk vanaf"), format=".0f"),
                alt.Tooltip("high:Q", title=tr("Likely to", "Waarschijnlijk tot"), format=".0f"),
-               alt.Tooltip("usual:Q", title=tr("Usual for this weekday", "Gewoon voor deze weekdag"), format=".0f"),
+               alt.Tooltip("usual:Q", title=tr("Usual for this weekday", "Normaal voor deze weekdag"), format=".0f"),
                alt.Tooltip("booked:Q", title=tr("Booked so far", "Tot nu toe geboekt"))]
     if has_walk_ins:
         tooltip[2:2] = [alt.Tooltip("reserved:Q", title=tr("From reservations", "Uit reserveringen"), format=".0f"),
@@ -410,7 +414,7 @@ def plan_page():
         y=alt.Y("label_y:Q"), tooltip=tooltip))
     marks = [("bar", ui.CALM, tr("forecast", "voorspelling")),
              ("whisker", ui.INK, tr("likely range (8 in 10 days)", "waarschijnlijke marge (8 op de 10 dagen)")),
-             ("tick", ui.INK, tr("usual for that weekday", "gewoon voor die weekdag")),
+             ("tick", ui.INK, tr("usual for that weekday", "normaal voor die weekdag")),
              ("ring", ui.INK, tr("booked so far", "tot nu toe geboekt"))]
     if has_actual:
         marks.append(("diamond", ui.INK, tr("what really happened", "wat er echt gebeurde")))
@@ -422,11 +426,13 @@ def plan_page():
     with st.expander(tr("Staffing rules: change these to your own", "Personeelsregels: pas ze aan naar je eigen zaak"),
                      expanded=False):
         r1, r2 = st.columns([2, 1])
-        # Each language has its own copy of the rules, so the default role names read naturally.
-        default_rules = P.DEFAULT_RULES if T.lang() == "en" else P.DEFAULT_RULES.assign(
-            role=P.DEFAULT_RULES.role.map({"Floor": "Bediening", "Bar": "Bar", "Kitchen": "Keuken"}))
+        # Default role names in the language the visitor started in. Fixed after that, so switching
+        # language later never throws away rules they edited.
+        if "rules_default" not in st.session_state:
+            st.session_state["rules_default"] = P.DEFAULT_RULES if T.lang() == "en" else P.DEFAULT_RULES.assign(
+                role=P.DEFAULT_RULES.role.map({"Floor": "Bediening", "Bar": "Bar", "Kitchen": "Keuken"}))
         rules = r1.data_editor(
-            default_rules, num_rows="dynamic", hide_index=True, key=f"rules_{T.lang()}", width="stretch",
+            st.session_state["rules_default"], num_rows="dynamic", hide_index=True, key="rules", width="stretch",
             column_config={
                 "role": st.column_config.TextColumn(tr("Role", "Functie")),
                 "guests_per_person": st.column_config.NumberColumn(tr("Guests per person", "Gasten per persoon"),
@@ -449,12 +455,12 @@ def plan_page():
     staff = P.staffing(p.assign(high=p.high.fillna(p.forecast)), rules, use=staff_on)
     if source == "own":  # hand the same inputs to the assistant tab, so it answers about this file
         settings = (file_ids, sorted(mapping.items(), key=str), dayfirst, str(until.date()), skip_closed,
-                    walk_in, rules.to_json())
+                    walk_in, rules.to_json(), staff_on)
         st.session_state[OWN_DATA_KEY] = {
             "signature": hashlib.sha256(repr(settings).encode()).hexdigest()[:12], "until": until,
             "backend_args": dict(raw_export=raw, export_day=until, rules=rules.copy(), actual=actual,
                                  dayfirst=dayfirst, skip_closed=skip_closed, mapping=dict(mapping),
-                                 walk_in=walk_in),
+                                 walk_in=walk_in, staff_use=staff_on),
         }
 
     words = {"busier": tr("busier", "drukker"), "quieter": tr("quieter", "rustiger")}
@@ -467,11 +473,11 @@ def plan_page():
             return f"{'↑' if s == 'busier' else '↓'} {abs(r.vs_usual_pct):.0f}% {words[s]}"
         return ""
 
-    forecast_col, vs_usual_col = tr("Forecast", "Voorspelling"), tr("vs usual", "t.o.v. gewoon")
+    forecast_col, vs_usual_col = tr("Forecast", "Voorspelling"), tr("vs usual", "t.o.v. normaal")
     table = pd.DataFrame({
         tr("Date", "Datum"): p.date.map(day_label),
         tr("Booked so far", "Tot nu toe geboekt"): p.booked,
-        tr("Usual", "Gewoon"): p.usual.round(),
+        tr("Usual", "Normaal"): p.usual.round(),
         **({tr("From reservations", "Uit reserveringen"): p.reserved.round(),
             tr("Walk-ins (estimate)", "Walk-ins (schatting)"): p.walk_ins.round()}
            if has_walk_ins else {}),
@@ -517,7 +523,7 @@ def plan_page():
             "(every other week, Sep 2016 - Aug 2017, both hotels), 79-80% of days landed inside it, "
             "so a single fortnight can come out better or worse.",
             f"**Hoe dit voorbeeld uitpakte:** de voorspelling zat gemiddeld **{mae_p:.0f}** gasten per "
-            f"dag ernaast (het gewone weekdaggetal: {mae_u:.0f}), en **{inside:.0%}** van deze dagen viel "
+            f"dag ernaast (het normale weekdaggetal: {mae_u:.0f}), en **{inside:.0%}** van deze dagen viel "
             "binnen de waarschijnlijke marge. Over 50 verschillende tweeweekse plannen op deze data "
             "(om de week, sep 2016 - aug 2017, beide hotels) viel 79-80% van de dagen erbinnen, dus "
             "één losse twee weken kan beter of slechter uitvallen."))
@@ -527,7 +533,7 @@ def plan_page():
             ch = check.rename(columns={"days_ahead": tr("Days ahead", "Dagen vooruit"),
                                        "days_scored": tr("Days checked", "Dagen gecontroleerd"),
                                        "pace_error": tr("Forecast off by (avg)", "Voorspelling ernaast (gem.)"),
-                                       "usual_error": tr("Usual weekday off by (avg)", "Gewone weekdag ernaast (gem.)"),
+                                       "usual_error": tr("Usual weekday off by (avg)", "Normale weekdag ernaast (gem.)"),
                                        "pace_p80": tr("8 in 10 days within", "8 op de 10 dagen binnen")}).round(1)
             st.dataframe(ch, hide_index=True)
             st.caption(tr("Replayed on your last 8 weeks: for each past day the reservation book is rebuilt "
@@ -682,7 +688,8 @@ with proof_tab:
     g["miss"] = (g.weekday_average - g.actual).abs() - (g.pace - g.actual).abs()
     default_day = g.sort_values("miss").day.iloc[-1].date()
     day = pd.Timestamp(st.date_input(tr("Day", "Dag"), value=default_day, min_value=TEST[0].date(),
-                                     max_value=TEST[1].date(), width=260))
+                                     max_value=TEST[1].date(), width=260,
+                                     key=f"proof_day_{hotel}_{horizon}"))  # survives a language switch
     row = g[g.day == day].iloc[0]
     h = hotels()[hotel]
     refs = reference_days(h, day, horizon)
@@ -814,14 +821,17 @@ with ask_tab:
         exported = f"{own['until'].day} {T.month_name(own['until'])} {own['until'].year}"
         st.info(tr(f"The assistant answers from **your own reservations**, with the settings from the Plan "
                    f"tab (export of {exported}, so **today is {T.long_date(today)}**). It looks up the "
-                   f"forecast numbers it needs, and only those numbers go to the AI model; your file itself "
-                   f"stays in this browser session and is never saved.",
+                   f"forecast numbers it needs, and only those numbers go to the AI model. Your file is "
+                   f"never written to disk: the app keeps it in memory for at most an hour, and the log "
+                   f"of these conversations holds no questions, answers or numbers.",
                    f"De assistent antwoordt vanuit **je eigen reserveringen**, met de instellingen van het "
                    f"tabblad Plan (export van {exported}, dus **vandaag is {T.long_date(today)}**). Hij zoekt "
                    f"de voorspellingsgetallen op die hij nodig heeft, en alleen die getallen gaan naar het "
-                   f"AI-model; je bestand zelf blijft in deze browsersessie en wordt nergens opgeslagen."),
+                   f"AI-model. Je bestand wordt nooit op schijf opgeslagen: de app houdt het hooguit een uur "
+                   f"in het geheugen, en het logboek van deze gesprekken bevat geen vragen, antwoorden of "
+                   f"getallen."),
                 icon=":material/lock:")
-        render_assistant(own_backend(own), history_key=f"{HISTORY_KEY}_own_{own['signature']}")
+        render_assistant(own_backend(own), history_key=f"{HISTORY_KEY}_own_{own['signature']}", private=True)
     else:
         st.info(tr("The assistant answers from the **sample hotel's** forecast (export of 31 May 2017, so "
                    "**today is Thursday 1 June 2017**) with the default staffing rules. Every number it gives "

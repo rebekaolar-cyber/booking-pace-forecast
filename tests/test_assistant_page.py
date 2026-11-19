@@ -70,7 +70,23 @@ def test_an_api_error_shows_its_real_reason(monkeypatch):
     ("Error code: 529 - Overloaded", "busy"),
     ("Error code: 429 - rate_limit_error", "Too many"),
     ("something nobody has seen before", None),
+    ("Error code: 500 - internal error, request_id req_01401abc", None),  # "401" inside an id
 ])
 def test_error_hints_name_the_likely_cause(error, cause):
     hint = page.error_hint(error)
     assert (hint is None) if cause is None else (cause in hint)
+
+
+def test_own_data_runs_are_logged_without_their_content():
+    from agent.contract import ToolCall
+    result = RunResult(question="How busy is Saturday at my place?", answer="Saturday: 212 guests.",
+                       model="claude-haiku-5-5", prompt_version="v2", stop_reason="error",
+                       tool_calls=[ToolCall("get_forecast", {"start_date": "2026-11-21"},
+                                            {"days": [{"forecast_guests": 212}]}, 0.1)],
+                       error="Error code: 400 - Your credit balance is too low (212 guests)")
+    logged = page._private_copy(result)
+    text = repr(logged)
+    assert "212" not in text and "Saturday" not in text and "2026-11-21" not in text
+    assert [c.name for c in logged.tool_calls] == ["get_forecast"]
+    assert logged.error == "The Anthropic account behind this demo has run out of credits."
+    assert logged.input_tokens == result.input_tokens and logged.seconds == result.seconds

@@ -37,7 +37,8 @@ class ForecastBackend(Protocol):
         "from_reservations_guests" and "walk_ins_estimate_guests"; forecast_guests is their sum."""
 
     def staffing(self, date: dt.date, role: str | None) -> dict:
-        """{"date", "forecast_guests", "staff": [{"role", "count", "rule"}]}"""
+        """{"date", "forecast_guests", "staff": [{"role", "count", "rule"}]}
+        plus "staffed_for_guests" when the rules are applied to the top of the likely range."""
 
     def roles(self) -> list[str]:
         """Role names the staffing rules know, e.g. ["bar", "kitchen", "floor"]."""
