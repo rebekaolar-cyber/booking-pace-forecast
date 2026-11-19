@@ -153,6 +153,14 @@ only), staffing numbers worked out by the model itself, and garbled words ("ми
 "nanaast"). The caveat: 50 questions and one run per setup, so a difference of a few answers is
 within run-to-run variation, and only failed answers were checked by hand.
 
+**How stable is it?** On 19 Nov the same 20 questions were asked 3 times
+([report](evals/reports/2026-11-19-repeat-eval.md)). The pass rate per repeat was 85%, 75% and 85%,
+and in a second run of the same questions 85%, 80% and 100%. So a gap of 10 to 15 points between two
+single runs is noise, not proof that a change helped. In the hand check of the 60 answers in the
+first run, 1 had a real mistake (an English question answered in Dutch), 3 declined a booking but
+also quoted the forecast, and none had a wrong or invented number. The other 7 flags were 1
+unclear rounding and 6 scorer false alarms.
+
 **What the scorer checks** ([`evals/scoring.py`](evals/scoring.py), plain code, no second model)
 
 - **Every number is traced.** Each number in the answer must match a tool output for the day the

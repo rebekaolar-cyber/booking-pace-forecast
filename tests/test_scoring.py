@@ -827,6 +827,7 @@ def test_eight_in_ten_past_days_within_the_range_is_the_definition():
 @pytest.mark.parametrize("answer, grounded", [
     ("Fri 23 is the clearest quiet day, and Sun 25 is the busy day.", True),   # dr07, 19 Nov
     ("Friday 23 is quiet.", True),
+    ("Fri 23, Sat 24 and Sun 25 are the days to watch.", True),   # a short list (dr01, 19 Nov)
     ("Fri 24 is quiet.", False),          # 24 June is a Saturday: not a date, an untraced 24
     ("Saturday 30 guests are booked.", False),  # a quantity, not a day
 ])

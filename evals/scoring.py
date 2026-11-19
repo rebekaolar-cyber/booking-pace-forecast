@@ -577,7 +577,7 @@ class _Scanner:
         # when exactly one day the tools returned has that weekday and that day of the month.
         wd_names = {**{k.lower(): v for k, v in _WEEKDAY_ABBR.items()}, **_WEEKDAYS}
         wd_alt = "|".join(sorted(wd_names, key=len, reverse=True))
-        for m in self._scan(rf"\b(?P<wd>{wd_alt})\.?\s+(?P<d>\d{{1,2}})(?![\d.,:%]|\s*(?:{_MONTHS})\b)"):
+        for m in self._scan(rf"\b(?P<wd>{wd_alt})\.?\s+(?P<d>\d{{1,2}})(?![\d:%]|[.,]\d|\s*(?:{_MONTHS})\b)"):
             wd, d = wd_names[m["wd"].lower()], int(m["d"])
             match = [x for x in ctx.run_dates if x.day == d and x.weekday() == wd]
             if len(match) == 1 and not self._quantity_after(m.end()):
