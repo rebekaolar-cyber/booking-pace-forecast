@@ -3,6 +3,7 @@
     python -m evals.run                         # fake backend, haiku, prompt v2
     python -m evals.run --backend real --sample 10   # 10 questions, spread over categories
     python -m evals.run --ids sd01 nl05 --judge
+    python -m evals.run --backend real --sample 10 --repeat 3   # how stable are the scores?
 
 Reference numbers are computed here, at eval time, by calling the same tools on the same
 backend the assistant uses. Exit code 1 if any run failed with an error, or if the share of
@@ -246,6 +247,40 @@ def summarize(records: list[dict]) -> dict:
     }
 
 
+def stability(runs: list[list[dict]]) -> dict:
+    """The same questions asked several times: how much the pass rate moves between runs, and
+    which questions pass only sometimes (flaky) or never. One run can't tell a real regression
+    from a model having an off day; this can."""
+    rates = [sum(r["passed"] for r in run) / len(run) for run in runs if run]
+    by_id: dict[str, list[bool]] = {}
+    for run in runs:
+        for r in run:
+            by_id.setdefault(r["id"], []).append(bool(r["passed"]))
+    return {
+        "runs": len(runs),
+        "pass_rate_per_run": [round(x, 4) for x in rates],
+        "pass_rate_mean": round(statistics.mean(rates), 4) if rates else None,
+        "pass_rate_min": round(min(rates), 4) if rates else None,
+        "pass_rate_max": round(max(rates), 4) if rates else None,
+        "always_passed": sum(all(v) for v in by_id.values()),
+        "always_failed": sorted(i for i, v in by_id.items() if not any(v)),
+        "flaky": [{"id": i, "passed": sum(v), "of": len(v)} for i, v in sorted(by_id.items())
+                  if any(v) and not all(v)],
+    }
+
+
+def format_stability(st: dict) -> str:
+    per_run = ", ".join(_pct(x) for x in st["pass_rate_per_run"])
+    lines = [f"Stability over {st['runs']} runs of the same questions",
+             f"  pass rate per run    {per_run}  (mean {_pct(st['pass_rate_mean'])}, "
+             f"range {_pct(st['pass_rate_min'])}-{_pct(st['pass_rate_max'])})",
+             f"  always passed        {st['always_passed']} questions",
+             f"  always failed        {', '.join(st['always_failed']) or 'none'}",
+             "  flaky                " + (", ".join(f"{f['id']} ({f['passed']}/{f['of']})" for f in st["flaky"])
+                                         or "none")]
+    return "\n".join(lines)
+
+
 def _pct(rate: float | None) -> str:
     return "n/a" if rate is None else f"{rate * 100:.0f}%"
 
@@ -302,6 +337,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="N questions spread over the categories (fixed seed)")
     p.add_argument("--seed", type=int, default=0, help="seed for --sample")
     p.add_argument("--ids", nargs="+", default=None, help="only these question ids")
+    p.add_argument("--repeat", type=int, default=1,
+                   help="ask the same questions N times and report how stable the scores are")
     p.add_argument("--judge", action="store_true", help="also score answers 1-5 with an LLM judge")
     p.add_argument("--judge-model", default=None, help="model for --judge (default: --model)")
     p.add_argument("--questions", default=str(QUESTIONS_PATH))
@@ -326,12 +363,25 @@ def main(argv: list[str] | None = None) -> int:
     config = {"backend": args.backend, "model": args.model, "prompt": args.prompt,
               "judge_model": (args.judge_model or args.model) if args.judge else None,
               "questions_file": Path(args.questions).name, "ids": args.ids, "limit": args.limit,
-              "sample": args.sample, "seed": args.seed if args.sample is not None else None}
+              "sample": args.sample, "seed": args.seed if args.sample is not None else None,
+              "repeat": args.repeat}
+    if args.repeat < 1:
+        raise SystemExit("--repeat must be at least 1")
     started = dt.datetime.now(dt.timezone.utc)
-    records = run_eval(questions, backend, answer_fn, model=args.model, prompt=args.prompt,
-                       cost_fn=_load_cost(), judge_client=judge_client,
-                       judge_model=args.judge_model)
+    runs = []
+    for k in range(1, args.repeat + 1):
+        if args.repeat > 1:
+            print(f"\nRun {k}/{args.repeat}", flush=True)
+        run_records = run_eval(questions, backend, answer_fn, model=args.model, prompt=args.prompt,
+                               cost_fn=_load_cost(), judge_client=judge_client,
+                               judge_model=args.judge_model)
+        for r in run_records:
+            r["repeat"] = k
+        runs.append(run_records)
+    records = [r for run_records in runs for r in run_records]  # every answer counts once
     summary = summarize(records)
+    if args.repeat > 1:
+        summary["stability"] = stability(runs)
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -343,6 +393,9 @@ def main(argv: list[str] | None = None) -> int:
 
     print()
     print(format_summary(summary, config))
+    if "stability" in summary:
+        print()
+        print(format_stability(summary["stability"]))
     print(f"\nSaved {out_path}")
     print_failures(records)
 

@@ -21,6 +21,10 @@ on:
         description: "Prompt version to evaluate (prompts/<version>.md)"
         required: false
         default: "v2"
+      repeat:
+        description: "Ask the same questions this many times, to see how stable the scores are"
+        required: false
+        default: "1"
 
 permissions:
   contents: read
@@ -64,8 +68,9 @@ jobs:
           EVAL_SAMPLE: ${{ inputs.sample || '10' }}
           EVAL_MODEL: ${{ inputs.model || 'claude-haiku-5-5' }}
           EVAL_PROMPT: ${{ inputs.prompt || 'v2' }}
+          EVAL_REPEAT: ${{ inputs.repeat || '1' }}
         run: |
-          python -m evals.run --backend real --sample "$EVAL_SAMPLE" --model "$EVAL_MODEL" --min-faithfulness 0.8 --prompt "$EVAL_PROMPT"
+          python -m evals.run --backend real --sample "$EVAL_SAMPLE" --model "$EVAL_MODEL" --min-faithfulness 0.8 --prompt "$EVAL_PROMPT" --repeat "$EVAL_REPEAT"
 
       - name: Upload eval results
         if: always() && steps.key.outputs.present == 'true'

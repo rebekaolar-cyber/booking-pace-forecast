@@ -764,3 +764,31 @@ def test_dutch_decline_with_words_between_kan_and_geen():
              TODAY)
     assert scoring.refusal_ok(r, expect, "nl")
     assert not scoring.refusal_ok(make("q", "Ik kan je helpen: za 15 jul wordt druk.", TODAY), expect, "nl")
+
+
+# --------------------------------------------------------------------------- "3 of the 4 days"
+# From the live eval of 17 Nov (dr07): a correct count that the scorer used to flag, because
+# "three of the four" was read as a rate ("3 in 4") instead of a count of days.
+
+def _jun(day, forecast, usual, pct, flag=None):
+    return {"date": f"2017-06-{day}", "weekday": "x", "booked_so_far_guests": 100,
+            "usual_for_weekday_guests": usual, "forecast_guests": forecast,
+            "range_low_guests": forecast - 16, "range_high_guests": forecast + 16,
+            "vs_usual_pct": pct, "flag": flag, "closed": False}
+
+
+DR07_DAYS = [_out("get_forecast", {"days": [_jun(22, 144, 153, -6.0), _jun(23, 139, 173, -19.8, "quiet"),
+                                            _jun(24, 116, 136, -14.5), _jun(25, 184, 123, 50.0, "busy")]})]
+
+
+@pytest.mark.parametrize("answer, grounded", [
+    ("Three of the four days are forecast below usual and Sunday is far above.", True),
+    ("Drie van de vier dagen liggen onder het gebruikelijke aantal.", True),
+    ("One of the four days is above usual.", True),
+    ("Two of the four days are flagged.", True),
+    ("Two of the four days are below usual.", False),   # it is three
+    ("Three of the five days are below usual.", False),  # four days were returned
+    ("Three of the four days are closed.", False),       # none is
+])
+def test_part_of_whole_day_counts(answer, grounded):
+    assert scoring.faithfulness(make_any(answer, DR07_DAYS))["ok"] is grounded, answer

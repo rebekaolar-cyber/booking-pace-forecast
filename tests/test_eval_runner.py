@@ -170,3 +170,32 @@ def test_alt_reading_is_scored_against_the_date_the_assistant_used():
     assert pick_reading(item, ran("2017-06-03"))["expect"]["calls"][0]["args"]["date"] == "2017-06-03"
     assert pick_reading(item, ran("2017-06-10"))["expect"]["calls"][0]["args"]["date"] == "2017-06-10"
     assert pick_reading(item, ran("2017-06-17"))["expect"]["calls"][0]["args"]["date"] == "2017-06-03"
+
+
+def test_repeat_reports_how_stable_the_scores_are(stub_agent, tmp_path, capsys):
+    calls = {"n": 0}
+
+    def sometimes_wrong(question, backend, **kw):
+        calls["n"] += 1
+        r = oracle_answer(question, backend, **kw)
+        if calls["n"] == 2:  # the 2nd answer of all (st01 in the first run) is wrong, once
+            r.answer += " Also expect 9999 guests at the bar."
+        return r
+
+    stub_agent(sometimes_wrong)
+    ids = ["sd01", "st01"]
+    run.main(["--ids", *ids, "--repeat", "3", "--out", str(tmp_path), "--min-faithfulness", "0"])
+    data = json.loads(next(tmp_path.glob("*.json")).read_text())
+    st = data["summary"]["stability"]
+    assert data["summary"]["questions"] == 6           # 2 questions x 3 runs, each answer counted
+    assert st["runs"] == 3 and st["pass_rate_per_run"] == [0.5, 1.0, 1.0]
+    assert st["flaky"] == [{"id": "st01", "passed": 2, "of": 3}]
+    assert st["always_passed"] == 1 and st["always_failed"] == []
+    assert {r["repeat"] for r in data["results"]} == {1, 2, 3}
+    assert "flaky                st01 (2/3)" in capsys.readouterr().out
+
+
+def test_stability_names_questions_that_never_pass():
+    runs = [[{"id": "a", "passed": True}, {"id": "b", "passed": False}]] * 2
+    st = run.stability(runs)
+    assert st["always_failed"] == ["b"] and st["flaky"] == [] and st["pass_rate_mean"] == 0.5

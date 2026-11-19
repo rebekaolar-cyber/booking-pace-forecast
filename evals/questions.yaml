@@ -170,6 +170,9 @@
   question: How do 22 to 25 June 2017 compare with what is usual for those weekdays?
   expect:
     tools: [get_forecast]
+    # Flagged days are the days well away from usual, so checking them answers this question
+    # too (as for the other "compared with normal" questions). Added 19 Nov after a live run.
+    allowed_tools: [get_flagged_days]
     calls:
       - {tool: get_forecast, args: {start_date: "2017-06-22", end_date: "2017-06-25"}}
     numbers_from: [forecast_guests]
