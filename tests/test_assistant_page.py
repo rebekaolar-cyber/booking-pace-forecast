@@ -42,3 +42,35 @@ def test_input_is_disabled_after_the_last_allowed_question(asked):
     assert any("the limit for one session" in info.value for info in at.info)
     assert any(md.value == f"answer {page.MAX_QUESTIONS_PER_SESSION}"
                for message in at.chat_message for md in message.markdown)
+
+
+def test_an_api_error_shows_its_real_reason(monkeypatch):
+    """A failed answer says what went wrong, on the page and in the app log, not only 'try again'."""
+    error = "Error code: 400 - {'type': 'error', 'error': {'message': 'Your credit balance is too low'}}"
+
+    def failing(question, backend, client=None, history=None, **kwargs):
+        return RunResult(question=question, answer="Sorry, I couldn't reach the AI service just now. "
+                         "Please try again in a moment.", model="claude-haiku-5-5", prompt_version="test",
+                         stop_reason="error", error=error)
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-not-a-real-key")
+    monkeypatch.setattr(page, "answer", failing)
+    monkeypatch.setattr(page, "log_run", lambda result: None)
+    page._daily_counter.clear()
+    at = AppTest.from_file(str(DEMO), default_timeout=60).run()
+    at.chat_input[0].set_value("How busy is Saturday?").run()
+    assert not at.exception
+    shown = " ".join(md.value for md in at.markdown)
+    assert "run out of credits" in shown
+    assert any("credit balance is too low" in c.value for c in at.code)
+
+
+@pytest.mark.parametrize("error, cause", [
+    ("Error code: 401 - invalid x-api-key", "rejected"),
+    ("Error code: 529 - Overloaded", "busy"),
+    ("Error code: 429 - rate_limit_error", "Too many"),
+    ("something nobody has seen before", None),
+])
+def test_error_hints_name_the_likely_cause(error, cause):
+    hint = page.error_hint(error)
+    assert (hint is None) if cause is None else (cause in hint)

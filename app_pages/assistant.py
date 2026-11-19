@@ -8,6 +8,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import sys
 import threading
 
 import streamlit as st
@@ -108,9 +109,49 @@ def _reply_text(result) -> str:
     return tr(result.answer, FIXED_REPLIES_NL.get(result.answer, result.answer))
 
 
+# What usually lies behind an API error, in plain words: (text found in the error, English, Dutch).
+# Checked in order; the first match wins.
+ERROR_HINTS = [
+    (("credit balance",), "The Anthropic account behind this demo has run out of credits.",
+     "Het Anthropic-account achter deze demo heeft geen tegoed meer."),
+    (("authentication", "x-api-key", "401"), "The API key was rejected: it may be mistyped or deleted.",
+     "De API-sleutel werd geweigerd: hij is misschien verkeerd overgenomen of verwijderd."),
+    (("permission", "403"), "The API key isn't allowed to use this model.",
+     "De API-sleutel mag dit model niet gebruiken."),
+    (("not_found", "404"), "The model name wasn't found.", "De modelnaam werd niet gevonden."),
+    (("rate_limit", "429"), "Too many questions at once for this API key. Try again in a minute.",
+     "Te veel vragen tegelijk voor deze API-sleutel. Probeer het over een minuut opnieuw."),
+    (("overloaded", "529"), "Anthropic's service is busy right now. Try again in a moment.",
+     "De dienst van Anthropic is nu druk. Probeer het zo opnieuw."),
+    (("timeout", "timed out", "connection"), "The connection to Anthropic failed or timed out.",
+     "De verbinding met Anthropic mislukte of duurde te lang."),
+]
+
+
+def error_hint(error: str) -> str | None:
+    """The likely cause of an API error in plain words, or None when it doesn't look familiar."""
+    low = error.lower()
+    for needles, english, dutch in ERROR_HINTS:
+        if any(n in low for n in needles):
+            return tr(english, dutch)
+    return None
+
+
+def _report_error(result) -> None:
+    """Write a failed answer's real reason to the app log (Streamlit Cloud: Manage app → logs)."""
+    if result.stop_reason == "error" and result.error:
+        print(f"[assistant] error after {result.seconds:.1f}s on {result.model}: {result.error}",
+              file=sys.stderr, flush=True)
+
+
 def _show_details(result) -> None:
     """The 'How I got this' box: lets a manager (or reviewer) check where numbers came from."""
-    with st.expander(tr("How I got this", "Hoe ik hieraan kom")):
+    with st.expander(tr("How I got this", "Hoe ik hieraan kom"), expanded=result.stop_reason == "error"):
+        if result.stop_reason == "error" and result.error:
+            hint = error_hint(result.error)
+            if hint:
+                st.markdown(tr(f"**Likely cause:** {hint}", f"**Waarschijnlijke oorzaak:** {hint}"))
+            st.code(result.error[:400], language=None, wrap_lines=True)
         if result.tool_calls:
             for call in result.tool_calls:
                 st.markdown(f"- `{call.name}` {json.dumps(call.input)} ({call.seconds:.2f} s)")
@@ -185,6 +226,7 @@ def render(backend) -> None:
         with st.spinner(tr("Checking the forecast...", "De voorspelling wordt bekeken...")):
             result = answer(question, backend, client=_client(api_key), history=earlier)
         log_run(result)
+        _report_error(result)
         st.markdown(_reply_text(result))
         _show_details(result)
     history.append((question, result))
