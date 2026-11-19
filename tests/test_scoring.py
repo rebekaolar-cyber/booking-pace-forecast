@@ -764,3 +764,72 @@ def test_dutch_decline_with_words_between_kan_and_geen():
              TODAY)
     assert scoring.refusal_ok(r, expect, "nl")
     assert not scoring.refusal_ok(make("q", "Ik kan je helpen: za 15 jul wordt druk.", TODAY), expect, "nl")
+
+
+# --------------------------------------------------------------------------- "3 of the 4 days"
+# From the live eval of 17 Nov (dr07): a correct count that the scorer used to flag, because
+# "three of the four" was read as a rate ("3 in 4") instead of a count of days.
+
+def _jun(day, forecast, usual, pct, flag=None):
+    return {"date": f"2017-06-{day}", "weekday": "x", "booked_so_far_guests": 100,
+            "usual_for_weekday_guests": usual, "forecast_guests": forecast,
+            "range_low_guests": forecast - 16, "range_high_guests": forecast + 16,
+            "vs_usual_pct": pct, "flag": flag, "closed": False}
+
+
+DR07_DAYS = [_out("get_forecast", {"days": [_jun(22, 144, 153, -6.0), _jun(23, 139, 173, -19.8, "quiet"),
+                                            _jun(24, 116, 136, -14.5), _jun(25, 184, 123, 50.0, "busy")]})]
+
+
+@pytest.mark.parametrize("answer, grounded", [
+    ("Three of the four days are forecast below usual and Sunday is far above.", True),
+    ("Drie van de vier dagen liggen onder het gebruikelijke aantal.", True),
+    ("One of the four days is above usual.", True),
+    ("Two of the four days are flagged.", True),
+    ("Two of the four days are below usual.", False),   # it is three
+    ("Three of the five days are below usual.", False),  # four days were returned
+    ("Three of the four days are closed.", False),       # none is
+])
+def test_part_of_whole_day_counts(answer, grounded):
+    assert scoring.faithfulness(make_any(answer, DR07_DAYS))["ok"] is grounded, answer
+
+
+@pytest.mark.parametrize("answer", [
+    "Three of the four days are above usual, Sunday is below.",                   # states swapped
+    "Only one of the four days is below usual, and three of the four days are above it.",
+])
+def test_part_of_whole_count_must_match_the_state_named_next_to_it(answer):
+    assert scoring.faithfulness(make_any(answer, DR07_DAYS))["ok"] is False, answer
+
+
+def test_part_and_whole_come_from_the_same_call():
+    week = [_jun(d, 100, 120, -16.7) for d in range(10, 15)] + [_jun(d, 130, 120, 8.3) for d in (15, 16)]
+    calls = DR07_DAYS + [_out("get_forecast", {"days": week})]  # 4 days (3 below) and 7 days (5 below)
+    assert scoring.faithfulness(make_any("Five of the seven days are below usual.", calls))["ok"]
+    assert not scoring.faithfulness(make_any("Three of the seven days are below usual.", calls))["ok"]
+
+
+def test_eight_in_ten_past_days_within_the_range_is_the_definition():
+    """ta02, live run of 19 Nov: the tool's own wording of the 80% range, not a coverage claim."""
+    answer = ("At 14 days ahead, the average error was 8.9 guests, and 8 in 10 past days landed "
+              "within ±16.0 guests of the forecast.")
+    acc = _out("get_accuracy", {"backtest": {"by_days_ahead": [
+        {"days_ahead": 14, "mean_abs_error_guests": 8.9, "range_half_width_guests": 16.0}]},
+        "range_percentile": 80, "range_meaning": "8 in 10 past days stayed within this distance of the forecast"})
+    assert scoring.faithfulness(make_any(answer, [acc]))["ok"]
+    for claim in ["Afterwards, 8 in 10 actual results landed inside the range.",
+                  "Over the past days since the export, 8 in 10 landed within the range.",
+                  "In the 14 days after the export, 8 in 10 of those past days landed within ±16 guests.",
+                  "Of the previous days, 80% landed within the likely range."]:
+        assert not scoring.faithfulness(make_any(claim, [acc]))["ok"], claim  # claims to check
+
+
+@pytest.mark.parametrize("answer, grounded", [
+    ("Fri 23 is the clearest quiet day, and Sun 25 is the busy day.", True),   # dr07, 19 Nov
+    ("Friday 23 is quiet.", True),
+    ("Fri 23, Sat 24 and Sun 25 are the days to watch.", True),   # a short list (dr01, 19 Nov)
+    ("Fri 24 is quiet.", False),          # 24 June is a Saturday: not a date, an untraced 24
+    ("Saturday 30 guests are booked.", False),  # a quantity, not a day
+])
+def test_weekday_with_a_day_number_is_a_date(answer, grounded):
+    assert scoring.faithfulness(make_any(answer, DR07_DAYS))["ok"] is grounded, answer

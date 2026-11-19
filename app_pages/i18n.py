@@ -57,10 +57,15 @@ def initial_language() -> str:
     return asked if asked in LANGUAGES else "en"
 
 
-def switch() -> None:
-    """The English / Nederlands switch. Draw it before any text, so the whole page follows it."""
+def ensure() -> None:
+    """Settle this visitor's language before anything is drawn (the browser tab title too)."""
     if STATE_KEY not in st.session_state:
         st.session_state[STATE_KEY] = initial_language()
+
+
+def switch() -> None:
+    """The English / Nederlands switch. Draw it before any text, so the whole page follows it."""
+    ensure()
     with st.container(horizontal=True, horizontal_alignment="right", key="lang_switch"):  # styled in ui.CSS
         st.segmented_control("Language / Taal", list(LANGUAGES), format_func=LANGUAGES.get,
                              key=STATE_KEY, required=True, label_visibility="collapsed")

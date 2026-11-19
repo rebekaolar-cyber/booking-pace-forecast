@@ -5,14 +5,18 @@ All the AI work happens in ``agent.loop.answer``; this file is only the UI aroun
 """
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import json
+import re
 import os
+import sys
 import threading
 
 import streamlit as st
 
 from agent import loop
+from agent.contract import ToolCall
 from agent.loop import answer
 from agent.run_log import cost_usd, log_run
 from app_pages.i18n import tr
@@ -108,9 +112,60 @@ def _reply_text(result) -> str:
     return tr(result.answer, FIXED_REPLIES_NL.get(result.answer, result.answer))
 
 
+# What usually lies behind an API error, in plain words: (text found in the error, English, Dutch).
+# Checked in order; the first match wins.
+ERROR_HINTS = [
+    (r"credit balance", "The Anthropic account behind this demo has run out of credits.",
+     "Het Anthropic-account achter deze demo heeft geen tegoed meer."),
+    (r"error code: 401|authentication_error|invalid x-api-key",
+     "The API key was rejected: it may be mistyped or deleted.",
+     "De API-sleutel werd geweigerd: hij is misschien verkeerd overgenomen of verwijderd."),
+    (r"error code: 403|permission_error", "The API key isn't allowed to use this model.",
+     "De API-sleutel mag dit model niet gebruiken."),
+    (r"error code: 404|not_found_error", "The model name wasn't found.", "De modelnaam werd niet gevonden."),
+    (r"error code: 429|rate_limit_error", "Too many questions at once for this API key. Try again in a minute.",
+     "Te veel vragen tegelijk voor deze API-sleutel. Probeer het over een minuut opnieuw."),
+    (r"error code: 529|overloaded", "Anthropic's service is busy right now. Try again in a moment.",
+     "De dienst van Anthropic is nu druk. Probeer het zo opnieuw."),
+    (r"timed out|timeout|connection error", "The connection to Anthropic failed or timed out.",
+     "De verbinding met Anthropic mislukte of duurde te lang."),
+]
+
+
+def error_hint(error: str, english: bool = False) -> str | None:
+    """The likely cause of an API error in plain words, or None when it doesn't look familiar.
+    Matched on the API's own error codes and types, not on any digits (a request id can hold "401")."""
+    for pattern, en, nl in ERROR_HINTS:
+        if re.search(pattern, error, re.I):
+            return en if english else tr(en, nl)
+    return None
+
+
+def _private_copy(result):
+    """A run on a visitor's own file, as it may be logged: timings, tokens, cost, tool names and
+    the kind of error, but no question, answer, tool output or error text (all can hold their data)."""
+    return dataclasses.replace(
+        result, question="[own data: not logged]", answer="[own data: not logged]",
+        tool_calls=[ToolCall(c.name, {}, {}, c.seconds) for c in result.tool_calls],
+        error=None if result.error is None else (error_hint(result.error, english=True) or "unrecognised error"))
+
+
+def _report_error(result, private: bool = False) -> None:
+    """Write a failed answer's real reason to the app log (Streamlit Cloud: Manage app → logs)."""
+    if result.stop_reason == "error" and result.error:
+        detail = _private_copy(result).error if private else result.error
+        print(f"[assistant] error after {result.seconds:.1f}s on {result.model}: {detail}",
+              file=sys.stderr, flush=True)
+
+
 def _show_details(result) -> None:
     """The 'How I got this' box: lets a manager (or reviewer) check where numbers came from."""
-    with st.expander(tr("How I got this", "Hoe ik hieraan kom")):
+    with st.expander(tr("How I got this", "Hoe ik hieraan kom"), expanded=result.stop_reason == "error"):
+        if result.stop_reason == "error" and result.error:
+            hint = error_hint(result.error)
+            if hint:
+                st.markdown(tr(f"**Likely cause:** {hint}", f"**Waarschijnlijke oorzaak:** {hint}"))
+            st.code(result.error[:400], language=None, wrap_lines=True)
         if result.tool_calls:
             for call in result.tool_calls:
                 st.markdown(f"- `{call.name}` {json.dumps(call.input)} ({call.seconds:.2f} s)")
@@ -132,16 +187,27 @@ def _show_turn(question: str, result) -> None:
         _show_details(result)
 
 
-def render(backend) -> None:
-    """Draw the chat page. Safe without an API key: it explains and disables input."""
+def _asked_this_session() -> int:
+    """Questions asked in this session over every conversation (sample hotel and own files)."""
+    return sum(len(v) for k, v in st.session_state.items()
+               if isinstance(k, str) and k.startswith(HISTORY_KEY) and isinstance(v, list))
+
+
+def render(backend, history_key: str = HISTORY_KEY, private: bool = False) -> None:
+    """Draw the chat page. Safe without an API key: it explains and disables input.
+
+    history_key keeps one conversation per dataset, so answers about the sample hotel never
+    become context for questions about the visitor's own file. The session cap counts them all.
+    private: the backend holds the visitor's own data, so the run log keeps no content.
+    """
     st.subheader(tr("Ask the assistant", "Vraag het de assistent"))
     st.caption(tr("Questions about expected guests and staffing, in English or Dutch.",
                   "Vragen over verwachte gasten en personeel, in het Nederlands of Engels."))
 
-    history: list[tuple[str, object]] = st.session_state.setdefault(HISTORY_KEY, [])
+    history: list[tuple[str, object]] = st.session_state.setdefault(history_key, [])
     api_key = _api_key()
     counter = _daily_counter()
-    session_limit = len(history) >= MAX_QUESTIONS_PER_SESSION
+    session_limit = _asked_this_session() >= MAX_QUESTIONS_PER_SESSION
     daily_limit = counter.reached(MAX_QUESTIONS_PER_DAY)
 
     if not api_key:
@@ -182,13 +248,26 @@ def render(backend) -> None:
     with st.chat_message("user", avatar=AVATARS["user"]):
         st.markdown(question)
     with st.chat_message("assistant", avatar=AVATARS["assistant"]):
+        reply = st.empty()  # filled piece by piece while the answer streams in
+        pieces: list[str] = []
+
+        def show_piece(piece: str | None) -> None:
+            if piece is None:  # that round called tools: its text was a preamble, not the answer
+                pieces.clear()
+                reply.empty()
+                return
+            pieces.append(piece)
+            reply.markdown("".join(pieces) + " ▌")
+
         with st.spinner(tr("Checking the forecast...", "De voorspelling wordt bekeken...")):
-            result = answer(question, backend, client=_client(api_key), history=earlier)
-        log_run(result)
-        st.markdown(_reply_text(result))
+            result = answer(question, backend, client=_client(api_key), history=earlier,
+                            on_text=show_piece)
+        log_run(_private_copy(result) if private else result)
+        _report_error(result, private)
+        reply.markdown(_reply_text(result))  # the final text (or a plain error), without the cursor
         _show_details(result)
     history.append((question, result))
     # This answer may have used the last question. The input above was drawn before it, still
     # enabled, so draw the page again: it then shows the limit note and disables the input.
-    if len(history) >= MAX_QUESTIONS_PER_SESSION or counter.reached(MAX_QUESTIONS_PER_DAY):
+    if _asked_this_session() >= MAX_QUESTIONS_PER_SESSION or counter.reached(MAX_QUESTIONS_PER_DAY):
         st.rerun()

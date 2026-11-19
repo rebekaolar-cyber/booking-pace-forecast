@@ -10,7 +10,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import anthropic
 
@@ -64,15 +64,32 @@ def history_messages(history: list[dict] | None) -> list[dict]:
     return messages
 
 
+def _call_model(client, on_text: Callable[[str | None], None] | None, **request):
+    """One model call. With on_text, the answer is streamed: each piece of text is passed on
+    as it arrives, and the complete message is returned at the end, exactly as without it."""
+    if on_text is None:
+        return client.messages.create(**request)
+    with client.messages.stream(**request) as stream:
+        for piece in stream.text_stream:
+            on_text(piece)
+        return stream.get_final_message()
+
+
 def answer(question: str, backend, client=None, model: str = "claude-haiku-5-5",
            prompt_version: str = "v2", history: list[dict] | None = None,
            max_rounds: int = 6, max_tool_calls: int = 12,
-           max_tokens: int = 700) -> RunResult:
+           max_tokens: int = 700,
+           on_text: Callable[[str | None], None] | None = None) -> RunResult:
     """Answer one question with the forecast tools. Never raises: problems become an
     'error' RunResult so the chat page and the evals can always show something.
 
     Two budgets stop a confused model from looping (and spending) forever:
     max_rounds model calls, and max_tool_calls tool calls in total.
+
+    on_text (optional, used by the chat page) receives the answer's text as it streams in.
+    When a round ends in tool calls instead of an answer, it receives None: whatever text that
+    round showed was a preamble, not the answer, and should be cleared. result.answer is always
+    the full, final answer, the same as without streaming.
     """
     result = RunResult(question=question, answer="", model=model, prompt_version=prompt_version)
     system = load_prompt(prompt_version)
@@ -90,8 +107,8 @@ def answer(question: str, backend, client=None, model: str = "claude-haiku-5-5",
             client = anthropic.Anthropic()
 
         for round_no in range(1, max_rounds + 1):
-            response = client.messages.create(
-                model=model, max_tokens=max_tokens, system=system,
+            response = _call_model(
+                client, on_text, model=model, max_tokens=max_tokens, system=system,
                 tools=TOOL_SCHEMAS, messages=messages,
             )
             usage = getattr(response, "usage", None)
@@ -102,6 +119,8 @@ def answer(question: str, backend, client=None, model: str = "claude-haiku-5-5",
             if response.stop_reason != "tool_use" or not tool_uses:
                 _finish(result, response)
                 break
+            if on_text is not None:
+                on_text(None)  # this round asked for tools; any text it streamed was not the answer
             if round_no == max_rounds:  # no model call left to answer with the results
                 result.answer = TOO_MANY_STEPS
                 result.stop_reason = "tool_limit"

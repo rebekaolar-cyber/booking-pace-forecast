@@ -175,6 +175,15 @@ _COVERAGE_TEXT = re.compile(r"\bheld\b|\bholds?\b|\bland(?:ed|s)?\b|\blag(?:en)?
 _INTENT_TEXT = re.compile(r"\bmeant to\b|\bdesigned to\b|\bsupposed to\b|\bintended to\b|"
                           r"\baims? to\b|\bshould\b|\bbedoeld\b|\bzou moeten\b|\bhoort te\b", re.I)
 
+# "8 in 10 past days landed within ±16 guests" is the tool's own definition of the range
+# (range_meaning: "8 in 10 past days stayed within this distance"), not a claim about what
+# happened after the export, even though it says "landed".
+# Only in the tool's form: past days within a distance ("within ±16 guests"), never "within the
+# range", and never about the days after the export.
+_PAST_DAYS_WITHIN = re.compile(r"\b(?:past|earlier|previous) days\b.*\bwithin\s*(?:±|\+/-)?\s*\d|"
+                               r"\b(?:eerdere|vorige) dagen\b.*\bbinnen\s*(?:±|\+/-)?\s*\d", re.I)
+_AFTER_EXPORT = re.compile(r"\b(?:since|after|afterwards|sinds|na afloop|na de)\b", re.I)
+
 # "16 days away": how far a day the clause names is from today (a date difference the reader
 # can check, so it is allowed when it is exactly that distance).
 _DISTANCE_AFTER = re.compile(r"^\s*(?:days?|dagen|dag)\s+(?:away|from now|from today|"
@@ -197,6 +206,16 @@ _FLAG_TOPIC = {
     "flagged": re.compile(r"\bflag|gemarkeerd|unusual|opvallend|afwijkend", re.I),
     "busy": re.compile(r"\bbus(?:y|ier)\b|\bdruk(?:ke|ker)?\b", re.I),
     "quiet": re.compile(r"\bquiet(?:er)?\b|\brustig(?:e|er)?\b", re.I),
+}
+
+# "3 of the 4 days are below usual": the part is a count of days in some state. Each state
+# counts only in a clause that names it, so "3 of the 4 days" can't borrow a flag count for a
+# claim about something else.
+_PART_TOPIC = {
+    "below": re.compile(r"\b(?:below|under|fewer|less|lower|quieter|onder|minder|lager|rustiger)\b", re.I),
+    "above": re.compile(r"\b(?:above|more|higher|busier|boven|meer|hoger|drukker)\b", re.I),
+    "closed": re.compile(r"\b(?:closed|gesloten|dicht)\b", re.I),
+    **_FLAG_TOPIC,
 }
 
 # Pairs of fields whose difference an answer may state ("5 fewer than usual", "11 still to come",
@@ -275,6 +294,9 @@ class _Sources:
     definition: list[float] = field(default_factory=list)  # range percentile: see _DEFINITION_KEY
     percentile: list[float] = field(default_factory=list)  # range_percentile itself (80)
     flag_counts: dict[str, set[float]] = field(default_factory=dict)  # "busy" -> {3, 8}
+    # One entry per tool call that returned days: (how many days, {state: how many of them}).
+    # "3 of the 4 days are below usual" must match one call, never a mix of two.
+    part_whole: list[tuple[float, dict[str, float]]] = field(default_factory=list)
     forecast_values: list[float] = field(default_factory=list)  # leaves of forecast/staffing records
     today: dt.date | None = None
     years: set[int] = field(default_factory=set)
@@ -300,12 +322,25 @@ def _collect(result: RunResult) -> _Sources:
             flags = {_iso(d.get("date")): d.get("flag") for d in days if isinstance(d, dict)}
             flags_by_day.update(flags)
             _add_flag_counts(src, list(flags.values()))
+            _add_part_counts(src, [d for d in days if isinstance(d, dict)])
     if flags_by_day:  # and over all calls together
         _add_flag_counts(src, list(flags_by_day.values()))
     src.years |= {d.year for d in src.records}
     if src.today:
         src.years.add(src.today.year)
     return src
+
+
+def _add_part_counts(src: _Sources, days: list[dict]) -> None:
+    """For "3 of the 4 days ...": how many days one call returned, and how many were in each state."""
+    pcts = [d.get("vs_usual_pct") for d in days]
+    counts = {"below": sum(isinstance(x, (int, float)) and x < 0 for x in pcts),
+              "above": sum(isinstance(x, (int, float)) and x > 0 for x in pcts),
+              "closed": sum(bool(d.get("closed")) for d in days),
+              "flagged": sum(d.get("flag") is not None for d in days),
+              "busy": sum(d.get("flag") == "busy" for d in days),
+              "quiet": sum(d.get("flag") == "quiet" for d in days)}
+    src.part_whole.append((float(len(days)), {t: float(n) for t, n in counts.items()}))
 
 
 def _add_flag_counts(src: _Sources, flags: list[str | None]) -> None:
@@ -538,6 +573,15 @@ class _Scanner:
                     and not re.search(r"(?:est|ste)$", nxt):
                 dates = sorted(d for d in ctx.run_dates if d.day == int(m[1]))
             self._take(m.start(), m.end(), dates)
+        # "Fri 23", "Sunday 25": a weekday and a day of the month with no month. A date only
+        # when exactly one day the tools returned has that weekday and that day of the month.
+        wd_names = {**{k.lower(): v for k, v in _WEEKDAY_ABBR.items()}, **_WEEKDAYS}
+        wd_alt = "|".join(sorted(wd_names, key=len, reverse=True))
+        for m in self._scan(rf"\b(?P<wd>{wd_alt})\.?\s+(?P<d>\d{{1,2}})(?![\d:%]|[.,]\d|\s*(?:{_MONTHS})\b)"):
+            wd, d = wd_names[m["wd"].lower()], int(m["d"])
+            match = [x for x in ctx.run_dates if x.day == d and x.weekday() == wd]
+            if len(match) == 1 and not self._quantity_after(m.end()):
+                self._take(m.start("d"), m.end("d"), match)
         for m in self._scan(r"\b(?:week|wk|weeknummer)\s*(?:nr\.?\s*|no\.?\s*|#)?\d{1,2}\b"):
             self._take(m.start(), m.end())  # week 23
         for m in self._scan(r"(?<!\d )\b(?:in|over)\s+(\d{1,2})\s+(?:days|dagen)\b"):  # in 10 days
@@ -756,6 +800,7 @@ class _Pool:
     rate_definition: list[float] = field(default_factory=list)  # same, for "8 in 10" rates
     percentile: list[float] = field(default_factory=list)       # 80, when named "the 80% range"
     day_counts: set[float] = field(default_factory=set)    # allowed "N days" in a flag clause
+    part_whole: list[tuple[float, dict[str, float]]] = field(default_factory=list)  # see _Sources
     distances: set[float] = field(default_factory=set)     # days from today to the clause's days
 
 
@@ -811,7 +856,8 @@ def _pool(src: _Sources, days: set[dt.date] | None, all_days: set[dt.date] | Non
                 values.append(_Value(sum(x for _, x in dv) / len(dv), key))
     named = set(src.records) if days is None else days
     pairs = [p for d in named for p in src.pairs.get(d, [])]
-    intent = bool(_INTENT_TEXT.search(clause))
+    intent = bool(_INTENT_TEXT.search(clause)) or (
+        bool(_PAST_DAYS_WITHIN.search(clause)) and not _AFTER_EXPORT.search(clause))
     coverage_claim = bool(_COVERAGE_TEXT.search(clause)) and not intent
     defines = bool(_DEFINITION_TEXT.search(clause)) or intent
     # The percentile may be written as "80%" only in a clause that defines the range. A rate
@@ -822,6 +868,14 @@ def _pool(src: _Sources, days: set[dt.date] | None, all_days: set[dt.date] | Non
     distances = {float((d - src.today).days) for d in named} if src.today else set()
     return _Pool(values, question, pairs, by_key, clause=clause, definition=definition,
                  rate_definition=rate_definition, distances=distances, percentile=src.percentile)
+
+
+def _state_after(text: str, pos: int) -> str | None:
+    """The state a "3 of the 4 days" count is about: the first state word after it, before the
+    clause moves on (a comma, full stop, "and", "but")."""
+    tail = re.split(r"[,.;:\n]|\b(?:and|but|while|en|maar|terwijl)\b", text[pos:pos + 80], maxsplit=1)[0]
+    found = [(m.start(), topic) for topic, rx in _PART_TOPIC.items() for m in [rx.search(tail)] if m]
+    return min(found)[1] if found else None
 
 
 def _threshold_ok(n: _Num, pool: _Pool) -> bool:
@@ -890,6 +944,14 @@ def _item_ok(item: _Item, pool: _Pool) -> bool:
         pcts += pool.rate_definition
         if any(value_matches(share, p) or value_matches(100 - share, p) for p in pcts):
             return True
+        # "3 of the 4 days are below usual": a count of days, not a rate. The whole must be the
+        # number of days one tool call returned, and the part the number of those same days in
+        # the state named right after it ("... are below usual").
+        if _DAYS_AFTER.match(pool.text[b.end:b.end + 30]):
+            topic = _state_after(pool.text, b.end)
+            return topic is not None and any(
+                value_matches(b.value, whole) and value_matches(a.value, parts[topic])
+                for whole, parts in pool.part_whole)
         # "x in 10", "x out of 5": a rate, so only its share counts. Otherwise ("3 of the 12
         # days") both numbers must be grounded on their own.
         if b.value <= 10 or b.value == 100:
@@ -975,6 +1037,7 @@ def faithfulness(result: RunResult) -> dict:
         pool.text = text
         pool.day_counts = day_counts | set().union(*(
             c for topic, c in src.flag_counts.items() if _FLAG_TOPIC[topic].search(pool.clause)))
+        pool.part_whole = src.part_whole
         for it in items:
             if _item_ok(it, pool):
                 continue

@@ -12,22 +12,32 @@ The whole app switches between English and Dutch (top right; a link ending in `?
   ahead is 53-68% smaller than the usual weekday average ([`reports/results.md`](reports/results.md),
   bookings: [`data/README.md`](data/README.md)).
 - **An AI assistant that only quotes numbers from the forecast tools.** Claude tool use with five
-  read-only tools, in a plain loop with no framework ([`agent/loop.py`](agent/loop.py)).
+  read-only tools, in a plain loop with no framework ([`agent/loop.py`](agent/loop.py)). It answers
+  about the sample hotel or about the visitor's own uploaded reservations, and streams its answer.
 - **An eval that checks it.** 50 questions, a scorer in plain code that traces every number back to
-  a tool result, and a hand audit of every failure ([report](evals/reports/2026-11-16-live-eval.md)).
+  a tool result, a hand audit of every failure ([report](evals/reports/2026-11-16-live-eval.md)), and
+  repeated runs that show which questions pass only sometimes.
 - **An MCP server.** The same tools work in Claude Desktop or any other MCP client
   ([`docs/mcp.md`](docs/mcp.md)).
 
 **Live demo:** _deploying — link coming_
 
-![Planning the next two weeks](docs/demo.png)
+![A 25-second tour: the two-week plan, the accuracy check and the switch to Dutch](docs/demo.gif)
 
 ## The AI assistant
 
 The app's third tab is a chat assistant for the manager: "How many bar staff do I need on
-Saturday?", "Any unusual days in the next two weeks?", "Wordt het druk aanstaande vrijdag?". It
-answers from the sample city hotel's forecast, where "today" is Thu 1 Jun 2017. It never sees an
-uploaded file.
+Saturday?", "Any unusual days in the next two weeks?", "Wordt het druk aanstaande vrijdag?".
+
+- **On the sample hotel** it answers from the city hotel's forecast, where "today" is Thu 1 Jun 2017.
+- **On your own reservations:** after an upload on the Plan tab, the assistant tab offers "My
+  reservations". The tools then run on exactly what the Plan tab used: the columns you confirmed,
+  the export day, your staffing rules, till totals and walk-in estimate
+  ([`agent/real_backend.py`](agent/real_backend.py)). Only the forecast numbers the model looks up
+  are sent to the API. The file is never written to disk: it stays in the app's memory while you
+  use it (cached copies for at most an hour), and the run log keeps no questions, answers or
+  numbers from these conversations. Each dataset
+  keeps its own conversation, so answers about the sample never leak into questions about your file.
 
 ![Architecture: the chat tab, the eval runner and MCP clients all reach the forecast through the same five read-only tools](docs/architecture.png)
 
@@ -42,8 +52,12 @@ uploaded file.
 3. The tools are read-only: `get_today_and_data_range`, `get_forecast`, `get_staffing`,
    `get_flagged_days` and `get_accuracy`. A bad request (a past date, an unknown role, more than
    28 days) comes back as `{"error": "<plain sentence>"}` that the model can explain.
-4. Every answer shows a "How I got this" box with the tools called, the time, the tokens and the
-   cost. Every run is logged to `logs/runs.jsonl` ([`agent/run_log.py`](agent/run_log.py)).
+4. The answer streams onto the page as it is written (`on_text` in the loop; the eval and the MCP
+   server don't stream and get the identical result).
+5. Every answer shows a "How I got this" box with the tools called, the time, the tokens and the
+   cost. When a call fails, the box names the likely cause (no credits, a rejected key, rate limit,
+   overload) and shows the API's error, which also goes to the app log. Every run is logged to
+   `logs/runs.jsonl` ([`agent/run_log.py`](agent/run_log.py)).
 
 **Guardrails**
 
@@ -139,6 +153,14 @@ only), staffing numbers worked out by the model itself, and garbled words ("ми
 "nanaast"). The caveat: 50 questions and one run per setup, so a difference of a few answers is
 within run-to-run variation, and only failed answers were checked by hand.
 
+**How stable is it?** On 19 Nov the same 20 questions were asked 3 times
+([report](evals/reports/2026-11-19-repeat-eval.md)). The pass rate per repeat was 85%, 75% and 85%,
+and in a second run of the same questions 85%, 80% and 100%. So a gap of 10 to 15 points between two
+single runs is noise, not proof that a change helped. The 11 flagged answers of the first run were
+checked by hand: 1 real mistake (an English question answered in Dutch), 3 that declined a booking
+but also quoted the forecast, 1 unclear rounding and 6 scorer false alarms. None of them had a wrong
+or invented number; the 49 answers that passed were not checked by hand.
+
 **What the scorer checks** ([`evals/scoring.py`](evals/scoring.py), plain code, no second model)
 
 - **Every number is traced.** Each number in the answer must match a tool output for the day the
@@ -155,8 +177,9 @@ some correct answers:
 
 - A sentence that names no day is checked against every day of the run, so a number from the wrong
   day can pass there.
-- Counts of days are only checked in the form "N busy/flagged days". "Two are busy" (there were 3)
-  passed.
+- Counts of days are only checked in the forms "N busy/flagged days" and "N of the M days are
+  below usual / flagged / closed" (M must be the days a tool returned, N those in that state).
+  "Two are busy" (there were 3) passed.
 - Short date lists ("Wed 7, Sat 10 and Fri 16 Jun"), the 80% target wording and the 15% threshold
   wording still cause false alarms.
 - Dutch fragments in an English answer, wrong weekday labels and garbled words are not caught.
@@ -166,14 +189,16 @@ some correct answers:
 
 ```bash
 python -m evals.run --backend real --prompt v2            # needs ANTHROPIC_API_KEY
+python -m evals.run --backend real --sample 10 --repeat 3  # same questions 3 times: how stable?
 python -m evals.run                                       # demo forecast data, still calls the model
 python -m evals.compare evals/results/A.json evals/results/B.json   # two runs side by side
 ```
 
 In GitHub Actions, [`eval.yml`](.github/workflows/eval.yml) runs the live eval on every push to
 `main` when the `ANTHROPIC_API_KEY` secret is set. Run it by hand from the Actions tab
-(workflow_dispatch) with three inputs: `sample` (number of questions, default 10), `model`
-(default `claude-haiku-5-5`) and `prompt` (default `v2`). It fails the build when a run ends in an
+(workflow_dispatch) with four inputs: `sample` (number of questions, default 10), `model`
+(default `claude-haiku-5-5`), `prompt` (default `v2`) and `repeat` (how many times to ask the same
+questions, default 1). It fails the build when a run ends in an
 error or fewer than 80% of answers have every number traced. Flags above that line show up as
 warnings on the run, to check by hand, because the scorer still has the false alarms listed above.
 

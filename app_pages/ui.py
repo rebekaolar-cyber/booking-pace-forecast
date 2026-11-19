@@ -200,6 +200,12 @@ h2, h3 {{ font-variation-settings:"wdth" 86; letter-spacing:-0.005em; }}
 .gf-g-dash::before {{ left:0; right:0; top:calc(50% - 1px); height:0; background:none; border-top:2px dashed var(--c); }}
 
 /* ---- error compared, on the accuracy tab */
+.gf-methods {{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:.8rem; margin:.6rem 0 1.2rem; }}
+.gf-method {{ background:var(--gf-card); border:1px solid var(--gf-line); border-radius:10px; padding:.8rem 1rem; }}
+.gf-method h4 {{ display:flex; align-items:center; gap:.5rem; margin:0 0 .35rem; padding:0; font-size:1rem; font-weight:650; color:var(--gf-ink); }}
+.gf-method h4 i {{ width:.8rem; height:.8rem; border-radius:3px; background:var(--c); flex:none; }}
+.gf-method p {{ margin:0; font-size:.92rem; line-height:1.45; color:var(--gf-ink2); }}
+@media (max-width: 760px) {{ .gf-methods {{ grid-template-columns:minmax(0,1fr); }} }}
 .gf-errs {{ display:grid; grid-template-columns:max-content minmax(4rem,1fr) max-content max-content; gap:.7rem 1rem; align-items:center; margin:.4rem 0 .2rem; }}
 .gf-err-name {{ color:var(--gf-ink); font-weight:500; }}
 .gf-err-track {{ height:1.5rem; }}
@@ -395,6 +401,13 @@ def error_bars(rows: list[tuple[str, float, str, str]]) -> str:
             f'<small>{tr("guests", "gasten")}</small></div>'
             f'<div class="gf-err-note">{escape(note)}</div>')
     return f'<div class="gf-errs">{"".join(cells)}</div>'
+
+
+def methods(items: list[tuple[str, str, str]]) -> str:
+    """The forecasting methods side by side: (colour, name, one plain sentence)."""
+    cards = [f'<div class="gf-method"><h4><i style="--c:{colour}" aria-hidden="true"></i>{escape(name)}</h4>'
+             f'<p>{escape(text)}</p></div>' for colour, name, text in items]
+    return f'<div class="gf-methods">{"".join(cards)}</div>'
 
 
 def footer(repo: str) -> str:

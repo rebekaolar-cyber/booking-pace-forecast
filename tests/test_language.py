@@ -84,3 +84,22 @@ def test_every_message_from_the_forecast_code_has_a_dutch_version(monkeypatch):
     assert prep.notes  # one undated cancellation, one no-show
     for note in prep.notes:
         assert i18n.message(note) != note, note
+
+
+def test_a_language_switch_keeps_the_export_day(app):
+    import datetime as dt
+    at = app.run()
+    until = next(d for d in at.date_input if d.key and d.key.startswith("until_"))
+    until.set_value(dt.date(2017, 5, 20)).run()
+    at.segmented_control(key=i18n.STATE_KEY).set_value("nl").run()
+    assert not at.exception, [e.value for e in at.exception]
+    until = next(d for d in at.date_input if d.key and d.key.startswith("until_"))
+    assert until.value == dt.date(2017, 5, 20)
+
+
+def test_staffing_rules_keep_their_names_across_a_switch(app):
+    at = app.run()
+    first = at.session_state["rules_default"].role.tolist()
+    at.segmented_control(key=i18n.STATE_KEY).set_value("nl").run()
+    assert not at.exception
+    assert at.session_state["rules_default"].role.tolist() == first == ["Floor", "Bar", "Kitchen"]
